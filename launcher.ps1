@@ -31,8 +31,32 @@ function Show-LaunchError {
   } catch {}
 }
 
+function Normalize-PowerShellFiles {
+  $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+  $self = [System.IO.Path]::GetFullPath($MyInvocation.MyCommand.Path)
+  foreach ($file in Get-ChildItem -LiteralPath $root -Filter '*.ps1' -File) {
+    try {
+      if ([System.IO.Path]::GetFullPath($file.FullName) -eq $self) { continue }
+      $text = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
+      if ($file.Name -eq 'tray.ps1') {
+        $text = $text.Replace('===== v0.3.4 tray starting =====','===== v0.3.5 tray starting =====')
+        $text = $text.Replace('CodexDualUsageTrayV034','CodexDualUsageTray')
+      }
+      [System.IO.File]::WriteAllText($file.FullName, $text, $utf8Bom)
+    } catch {
+      Write-StartupLog ('normalize warning for ' + $file.Name + ': ' + $_.Exception.Message)
+    }
+  }
+}
+
 try {
   Write-StartupLog '===== launcher v0.3.5 starting ====='
+
+  # GitHub source archives are UTF-8 without a BOM. Windows PowerShell 5.1 may
+  # interpret those files with the legacy system code page. Normalize local
+  # PowerShell sources before launching so non-ASCII UI strings remain safe.
+  Normalize-PowerShellFiles
+  Write-StartupLog 'PowerShell source encoding normalized for Windows PowerShell 5.1.'
 
   $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
   if (-not (Test-Path -LiteralPath $ps)) { $ps = 'powershell.exe' }
