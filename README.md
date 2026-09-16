@@ -1,48 +1,74 @@
 # Codex Dual Usage Dashboard
 
-Windows tray dashboard for viewing ChatGPT/Codex usage limits for two separate accounts (Personal + Work).
+Windows desktop floating quota monitor for two ChatGPT/Codex accounts (Personal + Work).
 
-Current version: **v0.3.7**
+Current version: **v0.3.8**
 
-## What it shows
+## Main experience
+
+After `start.bat`, the app now starts as a small always-available **desktop floating ball** instead of opening the full quota window.
+
+The ball displays compact Personal / Work quota summaries:
+
+```text
+P 95%
+W 21%
+CODEX
+```
+
+- Drag the ball anywhere on the desktop.
+- Left-click the ball to expand/collapse the full quota panel.
+- Right-click the ball for refresh, visibility, always-on-top, reset position, account login/switch, logs, and exit.
+- The ball ring changes color according to the lowest meaningful remaining quota.
+
+## Resizable detail panel
+
+The expanded quota panel is now a normal resizable tool window:
+
+- Move it anywhere.
+- Resize width and height freely.
+- The account cards and progress bars adapt to the current width.
+- Closing the panel only hides it; the floating ball keeps running.
+- The fixed header and quota area use separate layout rows, so the Personal card is no longer rendered underneath the header.
+
+## Persistent UI settings
+
+The app saves local UI preferences to:
+
+```text
+ui-settings.json
+```
+
+It remembers:
+
+- Floating ball X/Y position
+- Detail panel X/Y position
+- Detail panel width/height
+- Floating ball visibility
+- Always-on-top preference
+
+`ui-settings.json` is ignored by Git and is never uploaded to the repository.
+
+## Quotas shown
 
 - Personal account: 5-hour limit and weekly limit
 - Work account: monthly workspace limit (when provided), 5-hour limit, and weekly limit
-- Remaining percentage for each quota window
-- Time remaining until reset
-- Independent Personal / Work Codex profiles
-- Windows system tray access and manual refresh
-- Automatic background refresh every 5 minutes
+- Remaining percentage
+- Time until reset
 
-## v0.3.7
+The floating ball uses the meaningful 5-hour/weekly limits and only includes a monthly limit in its summary when that monthly limit has a positive limit value.
 
-- Fixed the Personal account card being rendered underneath the fixed header.
-- The quota content area now starts below the 58px header instead of using `Dock=Fill`.
-- Increased minimum popup height so the first card is fully visible.
-- Kept the existing 5-minute automatic refresh interval.
+## Automatic refresh
 
-## v0.3.6
+The app refreshes in the background every **5 minutes**.
 
-- Fixed the Windows PowerShell 5.1 `Path.GetFullPath` startup error introduced in v0.3.5.
-- Removed use of `$MyInvocation.MyCommand.Path` from inside the source-normalization function.
-- Replaced `Start-Process` with `System.Diagnostics.ProcessStartInfo` for tray startup.
-- Added a syntax check for `tray.ps1` before the tray process launches.
-- Preserved automatic UTF-8 BOM normalization for GitHub ZIP downloads.
+Automatic refresh is silent in v0.3.8: the existing panel stays visible while new data is loaded. If a background refresh fails, the previous successful data remains on screen.
 
-## v0.3.5
+You can also refresh immediately from:
 
-- Hardened startup for GitHub ZIP downloads.
-- `start.bat` no longer depends on Windows Script Host / VBS for normal startup.
-- Added `launcher.ps1` with startup health checks and persistent startup logs.
-- GitHub-downloaded PowerShell files are normalized locally for Windows PowerShell 5.1 before launch.
-- Early startup failures write `logs/startup-error.log` instead of silently disappearing.
-
-## v0.3.4
-
-- Dark technology-style UI.
-- Larger adaptive popup window.
-- Automatically returns the quota panel to the top when opened/refreshed.
-- Improved quota card hierarchy and progress bars.
+- The panel's **刷新** button
+- Right-click floating ball → **立即刷新**
+- Right-click tray icon → **立即刷新**
 
 ## Requirements
 
@@ -72,7 +98,9 @@ Run:
 start.bat
 ```
 
-For visible diagnostics:
+The floating ball appears near the lower-right area of the primary display the first time. After you drag it, its position is remembered.
+
+For visible startup diagnostics:
 
 ```text
 start-debug.bat
@@ -87,6 +115,21 @@ logs\tray.log
 logs\worker.log
 ```
 
+## Tray / floating-ball menu
+
+- 展开 / 收起额度面板
+- 立即刷新
+- 显示悬浮球
+- 始终置顶
+- 重置界面位置
+- 账号登录 / 切换
+  - 个人账号
+  - 工作账号
+- 打开日志文件夹
+- 退出
+
+If you hide the floating ball, the system-tray icon remains available so you can show it again.
+
 ## Diagnostics
 
 ```text
@@ -100,18 +143,29 @@ Runtime logs are written to `logs/` and are intentionally ignored by Git.
 
 The repository does not contain ChatGPT/Codex login credentials. Authentication files remain in the user's local Codex profile directories and should never be committed.
 
+Ignored local data includes:
+
+```text
+logs/
+usage-result.json
+ui-settings.json
+.codex/
+.codex-personal/
+.codex-work/
+```
+
 ## Project files
 
-- `tray.ps1` — tray UI and dashboard rendering
+- `tray.ps1` — floating ball, resizable panel, tray icon, rendering, refresh timers
 - `usage-reader.ps1` — Codex app-server quota reader
 - `usage-worker.ps1` — background refresh worker
 - `codex-tools.ps1` — Codex CLI discovery/helpers
 - `setup-account.ps1` — account setup/login logic
 - `profiles.json` — profile labels and local Codex home paths
-- `start.bat` / `launcher.ps1` — hardened normal startup
-- `start-hidden.vbs` — legacy launcher retained for compatibility
-- `start-debug.bat` — debug startup
+- `launcher.ps1` — Windows PowerShell 5.1 source normalization, syntax check, startup watchdog
+- `start.bat` — normal hidden startup
+- `start-debug.bat` — visible/debug startup through the same launcher
 
 ## GitHub ZIP note
 
-If you download the repository using **Code → Download ZIP**, extract the ZIP completely before running `start.bat`. v0.3.7 includes the header-layout compatibility fix plus the existing Windows PowerShell 5.1 startup diagnostics.
+If you download the repository using **Code → Download ZIP**, extract the ZIP completely before running `start.bat`. The launcher normalizes PowerShell files for Windows PowerShell 5.1 and validates `tray.ps1` before starting the floating UI.
