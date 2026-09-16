@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.8 - 2026-09-16
+
+- Replaced the always-open dashboard workflow with a desktop floating ball plus on-demand detail panel.
+- Floating ball shows Personal and Work remaining quota summaries and changes accent color as the lowest remaining quota drops.
+- Added drag-and-drop positioning for the floating ball.
+- Made the detailed quota panel freely resizable and movable.
+- Added persistent `ui-settings.json` storage for floating-ball position, panel position/size, visibility, and always-on-top preference.
+- Added right-click actions for refresh, show/hide floating ball, always-on-top, reset position, account login/switch, logs, and exit.
+- Kept the 5-minute automatic refresh, but automatic refresh is now silent and preserves the current panel while new data is loaded.
+- Rebuilt the panel with a two-row layout so the fixed header can never cover the Personal account card.
+- Simplified `launcher.ps1`; it now normalizes encoding and launches the checked v0.3.8 source directly instead of applying runtime UI patches.
+
 ## 0.3.7 - 2026-09-16
 
 - Fixed the Personal account card being rendered underneath the fixed header.
