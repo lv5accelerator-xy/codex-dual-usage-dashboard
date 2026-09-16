@@ -1,10 +1,10 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $logDir = Join-Path $root 'logs'
 $startupLog = Join-Path $logDir 'startup.log'
 $errorLog = Join-Path $logDir 'startup-error.log'
-$outputLog = Join-Path $logDir 'startup-output.log'
+$trayLog = Join-Path $logDir 'tray.log'
 
 if (-not (Test-Path -LiteralPath $logDir)) {
   New-Item -ItemType Directory -Force -Path $logDir | Out-Null
@@ -33,15 +33,22 @@ function Show-LaunchError {
 
 function Normalize-PowerShellFiles {
   $utf8Bom = New-Object System.Text.UTF8Encoding($true)
-  $self = [System.IO.Path]::GetFullPath($MyInvocation.MyCommand.Path)
+
   foreach ($file in Get-ChildItem -LiteralPath $root -Filter '*.ps1' -File) {
     try {
-      if ([System.IO.Path]::GetFullPath($file.FullName) -eq $self) { continue }
+      # launcher.ps1 is intentionally ASCII-only, so it does not need rewriting.
+      # Do not use $MyInvocation.MyCommand.Path inside this function: in Windows
+      # PowerShell 5.1 it refers to the function invocation and can be empty.
+      if ($file.Name -ieq 'launcher.ps1') { continue }
+
       $text = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
-      if ($file.Name -eq 'tray.ps1') {
-        $text = $text.Replace('===== v0.3.4 tray starting =====','===== v0.3.5 tray starting =====')
+
+      if ($file.Name -ieq 'tray.ps1') {
+        $text = $text.Replace('===== v0.3.4 tray starting =====','===== v0.3.6 tray starting =====')
+        $text = $text.Replace('===== v0.3.5 tray starting =====','===== v0.3.6 tray starting =====')
         $text = $text.Replace('CodexDualUsageTrayV034','CodexDualUsageTray')
       }
+
       [System.IO.File]::WriteAllText($file.FullName, $text, $utf8Bom)
     } catch {
       Write-StartupLog ('normalize warning for ' + $file.Name + ': ' + $_.Exception.Message)
@@ -49,53 +56,70 @@ function Normalize-PowerShellFiles {
   }
 }
 
+function Test-TraySyntax {
+  param([string]$Path)
+
+  $tokens = $null
+  $parseErrors = $null
+  [void][System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$parseErrors)
+
+  if ($null -ne $parseErrors -and $parseErrors.Count -gt 0) {
+    $messages = @($parseErrors | ForEach-Object { $_.Message })
+    throw ('tray.ps1 syntax check failed: ' + ($messages -join ' | '))
+  }
+}
+
 try {
-  Write-StartupLog '===== launcher v0.3.5 starting ====='
+  Write-StartupLog '===== launcher v0.3.6 starting ====='
 
-  # GitHub source archives are UTF-8 without a BOM. Windows PowerShell 5.1 may
-  # interpret those files with the legacy system code page. Normalize local
-  # PowerShell sources before launching so non-ASCII UI strings remain safe.
   Normalize-PowerShellFiles
-  Write-StartupLog 'PowerShell source encoding normalized for Windows PowerShell 5.1.'
-
-  $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-  if (-not (Test-Path -LiteralPath $ps)) { $ps = 'powershell.exe' }
+  Write-StartupLog 'PowerShell source encoding normalized.'
 
   $tray = Join-Path $root 'tray.ps1'
   if (-not (Test-Path -LiteralPath $tray)) {
     throw ('tray.ps1 not found: ' + $tray)
   }
 
-  Remove-Item -LiteralPath $errorLog -Force -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath $outputLog -Force -ErrorAction SilentlyContinue
+  Test-TraySyntax -Path $tray
+  Write-StartupLog 'tray.ps1 syntax check passed.'
 
-  $arguments = '-NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File "' + $tray + '"'
-  $process = Start-Process `
-    -FilePath $ps `
-    -ArgumentList $arguments `
-    -WorkingDirectory $root `
-    -WindowStyle Hidden `
-    -RedirectStandardError $errorLog `
-    -RedirectStandardOutput $outputLog `
-    -PassThru
+  $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  if (-not (Test-Path -LiteralPath $ps)) { $ps = 'powershell.exe' }
+
+  Remove-Item -LiteralPath $errorLog -Force -ErrorAction SilentlyContinue
+
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $ps
+  $psi.Arguments = '-NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File "' + $tray + '"'
+  $psi.WorkingDirectory = $root
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $psi
+
+  if (-not $process.Start()) {
+    throw 'Failed to start tray process.'
+  }
 
   Write-StartupLog ('tray process created. PID=' + $process.Id)
   Start-Sleep -Milliseconds 1800
 
   if ($process.HasExited) {
-    $stderr = ''
-    $stdout = ''
-    try { if (Test-Path -LiteralPath $errorLog) { $stderr = Get-Content -LiteralPath $errorLog -Raw -ErrorAction SilentlyContinue } } catch {}
-    try { if (Test-Path -LiteralPath $outputLog) { $stdout = Get-Content -LiteralPath $outputLog -Raw -ErrorAction SilentlyContinue } } catch {}
-
     $detail = ('Tray exited during startup. Exit code: {0}' -f $process.ExitCode)
-    if (-not [string]::IsNullOrWhiteSpace($stderr)) { $detail += "`r`n`r`n" + $stderr.Trim() }
-    elseif (-not [string]::IsNullOrWhiteSpace($stdout)) { $detail += "`r`n`r`n" + $stdout.Trim() }
-    $detail += "`r`n`r`nSee logs\startup-error.log and logs\tray.log."
 
-    Write-StartupLog $detail
-    Show-LaunchError $detail
-    exit 1
+    if (Test-Path -LiteralPath $trayLog) {
+      try {
+        $tail = @(Get-Content -LiteralPath $trayLog -Tail 12 -ErrorAction SilentlyContinue)
+        if ($tail.Count -gt 0) {
+          $detail += "`r`n`r`nLast tray log lines:`r`n" + ($tail -join "`r`n")
+        }
+      } catch {}
+    }
+
+    $detail += "`r`n`r`nSee logs\startup.log and logs\tray.log."
+    throw $detail
   }
 
   Write-StartupLog 'tray process survived startup check.'
