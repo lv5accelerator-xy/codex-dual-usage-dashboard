@@ -36,17 +36,46 @@ function Normalize-PowerShellFiles {
 
   foreach ($file in Get-ChildItem -LiteralPath $root -Filter '*.ps1' -File) {
     try {
-      # launcher.ps1 is intentionally ASCII-only, so it does not need rewriting.
-      # Do not use $MyInvocation.MyCommand.Path inside this function: in Windows
-      # PowerShell 5.1 it refers to the function invocation and can be empty.
       if ($file.Name -ieq 'launcher.ps1') { continue }
 
       $text = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
 
       if ($file.Name -ieq 'tray.ps1') {
-        $text = $text.Replace('===== v0.3.4 tray starting =====','===== v0.3.6 tray starting =====')
-        $text = $text.Replace('===== v0.3.5 tray starting =====','===== v0.3.6 tray starting =====')
+        $text = $text.Replace('===== v0.3.4 tray starting =====','===== v0.3.7 tray starting =====')
+        $text = $text.Replace('===== v0.3.5 tray starting =====','===== v0.3.7 tray starting =====')
+        $text = $text.Replace('===== v0.3.6 tray starting =====','===== v0.3.7 tray starting =====')
         $text = $text.Replace('CodexDualUsageTrayV034','CodexDualUsageTray')
+
+        # v0.3.7 layout fix: the scrollable quota area must start below the
+        # 58px header. Dock=Fill let the first account card render under the
+        # header, which is why the upper half of the Personal card was hidden.
+        if ($text -notmatch 'LayoutFixV037') {
+          $layoutPattern = '(?ms)^  \$script:ContentPanel = New-Object System\.Windows\.Forms\.Panel\r?\n  \$script:ContentPanel\.Dock = \[System\.Windows\.Forms\.DockStyle\]::Fill\r?\n  \$script:ContentPanel\.AutoScroll = \$true\r?\n  \$script:ContentPanel\.BackColor = \$script:Theme\.PopupBack\r?\n  \$script:Popup\.Controls\.Add\(\$script:ContentPanel\)\r?\n  \$header\.BringToFront\(\)'
+          $layoutReplacement = @'
+  # LayoutFixV037: keep quota cards physically below the fixed header.
+  $script:ContentPanel = New-Object System.Windows.Forms.Panel
+  $script:ContentPanel.AutoScroll = $true
+  $script:ContentPanel.BackColor = $script:Theme.PopupBack
+  $script:ContentPanel.Location = New-Object System.Drawing.Point -ArgumentList 0,58
+  $script:ContentPanel.Size = New-Object System.Drawing.Size -ArgumentList 408,562
+  $script:ContentPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+  $script:Popup.Controls.Add($script:ContentPanel)
+  $header.BringToFront()
+'@
+          $patched = [regex]::Replace($text, $layoutPattern, $layoutReplacement)
+          if ($patched -eq $text) {
+            Write-StartupLog 'layout patch warning: target ContentPanel block was not found.'
+          } else {
+            $text = $patched
+            Write-StartupLog 'v0.3.7 ContentPanel layout patch applied.'
+          }
+        }
+
+        # Leave enough client height for the header plus both account cards.
+        $text = $text.Replace(
+          '$totalHeight = [Math]::Max(460, [Math]::Min(760, $top + 74))',
+          '$totalHeight = [Math]::Max(520, [Math]::Min(760, $top + 100))'
+        )
       }
 
       [System.IO.File]::WriteAllText($file.FullName, $text, $utf8Bom)
@@ -70,10 +99,10 @@ function Test-TraySyntax {
 }
 
 try {
-  Write-StartupLog '===== launcher v0.3.6 starting ====='
+  Write-StartupLog '===== launcher v0.3.7 starting ====='
 
   Normalize-PowerShellFiles
-  Write-StartupLog 'PowerShell source encoding normalized.'
+  Write-StartupLog 'PowerShell source encoding and compatibility fixes applied.'
 
   $tray = Join-Path $root 'tray.ps1'
   if (-not (Test-Path -LiteralPath $tray)) {
