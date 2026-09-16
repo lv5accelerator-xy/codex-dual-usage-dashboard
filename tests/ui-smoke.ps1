@@ -31,7 +31,7 @@ Assert-Ui ($script:ContentPanel.Controls.Count -eq 2) 'Both account cards must r
 Assert-Ui ($script:BallCells.personal.five.Text -eq '100%') 'Personal 5-hour summary must be visible.'
 Assert-Ui ($script:BallCells.work.long.Text -eq '21%') 'Work summary must use the limiting long-term quota.'
 Assert-Ui ($script:ResetLabels.Count -eq 5) 'All five meaningful quota windows must render.'
-foreach ($width in @(380,440,620)) {
+foreach ($width in @(620,440,380,620,440)) {
   $script:Popup.Width = U $width
   $script:Popup.Height = U 840
   [System.Windows.Forms.Application]::DoEvents()
@@ -45,6 +45,11 @@ foreach ($width in @(380,440,620)) {
     }
   }
 }
+$script:ScrollBar.Value = [Math]::Max(0,$script:ScrollBar.Maximum - $script:ScrollBar.LargeChange + 1)
+[System.Windows.Forms.Application]::DoEvents()
+$lastCard = $script:ContentPanel.Controls[$script:ContentPanel.Controls.Count - 1]
+Assert-Ui ($lastCard.Bottom -le $script:ContentPanel.ClientSize.Height) 'Vertical scroll must reveal the last account actions.'
+$script:ScrollBar.Value = 0
 $script:Popup.Width = U 440
 $script:Popup.Height = U 840
 [System.Windows.Forms.Application]::DoEvents()

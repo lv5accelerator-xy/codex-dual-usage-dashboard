@@ -354,26 +354,45 @@ try {
     $login.AccessibleName = [string]$Profile.label + '：重新登录'
     $login.Add_Click({ param($sender,$eventArgs) Start-Login ([string]$sender.Tag) })
     $grid.Controls.Add($login,1,$row)
+    foreach ($control in @(Get-ControlTree $card)) {
+      $control.Add_MouseWheel({ param($sender,$eventArgs)
+        Move-VerticalScroll $eventArgs.Delta
+        if ($eventArgs -is [System.Windows.Forms.HandledMouseEventArgs]) { $eventArgs.Handled = $true }
+      })
+    }
     $script:ContentPanel.Controls.Add($card)
   }
 
   function Update-CardWidths {
-    if ($null -eq $script:ContentPanel -or $script:LayingOutCards) { return }
+    if ($null -eq $script:ContentPanel -or $null -eq $script:ScrollBar -or $script:LayingOutCards) { return }
     $script:LayingOutCards = $true
     try {
-      # Stack actual card heights. FlowLayoutPanel can retain a horizontal scroll
-      # extent after a wide-to-narrow resize, even when every card fits.
       $panel = $script:ContentPanel
-      $width = [Math]::Max(1, $panel.ClientSize.Width - $panel.Padding.Horizontal - [System.Windows.Forms.SystemInformation]::VerticalScrollBarWidth)
-      $top = $panel.Padding.Top
-      $offset = $panel.AutoScrollPosition.Y
+      $width = [Math]::Max(1, $panel.ClientSize.Width - $panel.Padding.Horizontal)
+      $totalHeight = $panel.Padding.Vertical
+      foreach ($card in $panel.Controls) { $totalHeight += $card.Height + $card.Margin.Bottom }
+      $maxScroll = [Math]::Max(0,$totalHeight - $panel.ClientSize.Height)
+      # Own the vertical range explicitly: WinForms AutoScroll can retain a
+      # horizontal range when the native scrollbar appears during a resize.
+      $script:ScrollBar.Value = [Math]::Min($script:ScrollBar.Value,$maxScroll)
+      $script:ScrollBar.LargeChange = [Math]::Max(1,$panel.ClientSize.Height)
+      $script:ScrollBar.Maximum = [Math]::Max(0,$totalHeight - 1)
+      $script:ScrollBar.SmallChange = U 36
+      $script:ScrollBar.Visible = $maxScroll -gt 0
+      $top = $panel.Padding.Top - $script:ScrollBar.Value
       foreach ($card in $panel.Controls) {
         $card.Width = $width
-        $card.Location = New-Object System.Drawing.Point -ArgumentList $panel.Padding.Left,($top + $offset)
+        $card.Location = New-Object System.Drawing.Point -ArgumentList $panel.Padding.Left,$top
         $top += $card.Height + $card.Margin.Bottom
       }
-      $panel.AutoScrollMinSize = New-Object System.Drawing.Size -ArgumentList 0,$top
     } finally { $script:LayingOutCards = $false }
+  }
+
+  function Move-VerticalScroll {
+    param([int]$Delta)
+    $max = [Math]::Max(0,$script:ScrollBar.Maximum - $script:ScrollBar.LargeChange + 1)
+    $next = $script:ScrollBar.Value - [int]($Delta / 120) * (U 72)
+    $script:ScrollBar.Value = [Math]::Max(0,[Math]::Min($max,$next))
   }
 
   function Update-BallSummary {
@@ -453,14 +472,16 @@ try {
 
   function Render-Data {
     param($Data)
-    $scroll = -$script:ContentPanel.AutoScrollPosition.Y
+    $scroll = $script:ScrollBar.Value
     $script:ContentPanel.SuspendLayout()
     try {
       Clear-Content
       foreach ($profile in @($Data.profiles)) { if ($null -ne $profile) { Add-AccountCard $profile } }
       Update-CardWidths
     } finally { $script:ContentPanel.ResumeLayout($true) }
-    $script:ContentPanel.AutoScrollPosition = New-Object System.Drawing.Point -ArgumentList 0,$scroll
+    $maxScroll = [Math]::Max(0,$script:ScrollBar.Maximum - $script:ScrollBar.LargeChange + 1)
+    $script:ScrollBar.Value = [Math]::Min($scroll,$maxScroll)
+    Update-CardWidths
     Update-Status
   }
 
@@ -648,11 +669,24 @@ try {
 
   $script:ContentPanel = New-Object System.Windows.Forms.Panel
   $script:ContentPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
-  $script:ContentPanel.AutoScroll = $true
+  $script:ContentPanel.AutoScroll = $false
   $script:ContentPanel.Margin = New-Object System.Windows.Forms.Padding -ArgumentList 0
   $script:ContentPanel.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 16),0,(U 16),0
   $script:ContentPanel.Add_SizeChanged({ Update-CardWidths })
-  $rootLayout.Controls.Add($script:ContentPanel,0,1)
+  $viewport = New-Grid -Columns 2
+  [void]$viewport.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]100)))
+  [void]$viewport.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Absolute),([single][System.Windows.Forms.SystemInformation]::VerticalScrollBarWidth)))
+  $viewport.RowCount = 1
+  [void]$viewport.RowStyles.Add((New-Object System.Windows.Forms.RowStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]100)))
+  $script:ScrollBar = New-Object System.Windows.Forms.VScrollBar
+  $script:ScrollBar.Dock = [System.Windows.Forms.DockStyle]::Fill
+  $script:ScrollBar.Margin = New-Object System.Windows.Forms.Padding -ArgumentList 0
+  $script:ScrollBar.AccessibleName = '额度面板垂直滚动'
+  $script:ScrollBar.Add_ValueChanged({ Update-CardWidths })
+  $script:ContentPanel.Add_MouseWheel({ param($sender,$eventArgs) Move-VerticalScroll $eventArgs.Delta })
+  $viewport.Controls.Add($script:ContentPanel,0,0)
+  $viewport.Controls.Add($script:ScrollBar,1,0)
+  $rootLayout.Controls.Add($viewport,0,1)
   $script:StatusLabel = New-Label -Size 9 -Muted
   $script:StatusLabel.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 20),0,(U 20),0
   $rootLayout.Controls.Add($script:StatusLabel,0,2)
