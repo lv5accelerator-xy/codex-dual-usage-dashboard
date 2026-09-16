@@ -13,7 +13,7 @@ function Write-PatchLog {
   } catch {}
 }
 
-function Replace-LiteralOrThrow {
+function Replace-Literal {
   param(
     [string]$Text,
     [string]$Old,
@@ -43,7 +43,7 @@ $newOrder = @'
       Add-QuotaRow -Parent $card -Title $monthlyTitle -Window $Profile.individualLimit -Y 98 -Detail $detail
       Add-QuotaRow -Parent $card -Title '每周限额' -Window $Profile.weekly -Y 158
 '@
-$text = Replace-LiteralOrThrow -Text $text -Old $oldOrder -New $newOrder -Name 'reorder detailed quota rows'
+$text = Replace-Literal -Text $text -Old $oldOrder -New $newOrder -Name 'reorder detailed quota rows'
 
 # Floating ball: show 5H before total. Total = weekly plus a meaningful monthly/workspace limit, taking the lower one.
 $ballFunctionPattern = '(?ms)^  function Update-BallSummary \{.*?^  function Clear-Content \{'
@@ -120,25 +120,25 @@ if ($patched -ne $text) {
   Write-PatchLog 'v0.3.9 patch: floating summary now shows 5H / total.'
 }
 
-# Keep the object circular while giving the two quota values enough room.
+# Keep the object circular while giving both values enough room.
 $text = $text.Replace('return (New-Object System.Drawing.Point -ArgumentList ($area.Right - 118),($area.Bottom - 180))','return (New-Object System.Drawing.Point -ArgumentList ($area.Right - 140),($area.Bottom - 200))')
 $text = $text.Replace('$script:Ball.Size = New-Object System.Drawing.Size -ArgumentList 92,92','$script:Ball.Size = New-Object System.Drawing.Size -ArgumentList 112,112')
 $text = $text.Replace('-Width 92 -Height 92','-Width 112 -Height 112')
 
-$text = $text.Replace("$script:BallPersonalLabel.Text = 'P --'","$script:BallPersonalLabel.Text = 'P -- / --'")
+$text = $text.Replace('$script:BallPersonalLabel.Text = ''P --''','$script:BallPersonalLabel.Text = ''P -- / --''')
 $text = $text.Replace('$script:BallPersonalLabel.Size = New-Object System.Drawing.Size -ArgumentList 78,22','$script:BallPersonalLabel.Size = New-Object System.Drawing.Size -ArgumentList 98,22')
 $text = $text.Replace('$script:BallPersonalLabel.Location = New-Object System.Drawing.Point -ArgumentList 7,17','$script:BallPersonalLabel.Location = New-Object System.Drawing.Point -ArgumentList 7,39')
-$text = $text.Replace("$script:BallPersonalLabel.Font = New-UiFont -FamilyName 'Consolas' -Size ([single]10) -Style ([System.Drawing.FontStyle]::Bold)","$script:BallPersonalLabel.Font = New-UiFont -FamilyName 'Consolas' -Size ([single]8.6) -Style ([System.Drawing.FontStyle]::Bold)")
+$text = $text.Replace('$script:BallPersonalLabel.Font = New-UiFont -FamilyName ''Consolas'' -Size ([single]10) -Style ([System.Drawing.FontStyle]::Bold)','$script:BallPersonalLabel.Font = New-UiFont -FamilyName ''Consolas'' -Size ([single]8.6) -Style ([System.Drawing.FontStyle]::Bold)')
 
-$text = $text.Replace("$script:BallWorkLabel.Text = 'W --'","$script:BallWorkLabel.Text = 'W -- / --'")
+$text = $text.Replace('$script:BallWorkLabel.Text = ''W --''','$script:BallWorkLabel.Text = ''W -- / --''')
 $text = $text.Replace('$script:BallWorkLabel.Size = New-Object System.Drawing.Size -ArgumentList 78,22','$script:BallWorkLabel.Size = New-Object System.Drawing.Size -ArgumentList 98,22')
 $text = $text.Replace('$script:BallWorkLabel.Location = New-Object System.Drawing.Point -ArgumentList 7,39','$script:BallWorkLabel.Location = New-Object System.Drawing.Point -ArgumentList 7,61')
-$text = $text.Replace("$script:BallWorkLabel.Font = New-UiFont -FamilyName 'Consolas' -Size ([single]10) -Style ([System.Drawing.FontStyle]::Bold)","$script:BallWorkLabel.Font = New-UiFont -FamilyName 'Consolas' -Size ([single]8.6) -Style ([System.Drawing.FontStyle]::Bold)")
+$text = $text.Replace('$script:BallWorkLabel.Font = New-UiFont -FamilyName ''Consolas'' -Size ([single]10) -Style ([System.Drawing.FontStyle]::Bold)','$script:BallWorkLabel.Font = New-UiFont -FamilyName ''Consolas'' -Size ([single]8.6) -Style ([System.Drawing.FontStyle]::Bold)')
 
-$text = $text.Replace("$ballCaption.Text = 'CODEX'","$ballCaption.Text = '5H  /  总'")
+$text = $text.Replace('$ballCaption.Text = ''CODEX''','$ballCaption.Text = ''5H  /  总''')
 $text = $text.Replace('$ballCaption.Size = New-Object System.Drawing.Size -ArgumentList 70,14','$ballCaption.Size = New-Object System.Drawing.Size -ArgumentList 84,18')
 $text = $text.Replace('$ballCaption.Location = New-Object System.Drawing.Point -ArgumentList 11,63','$ballCaption.Location = New-Object System.Drawing.Point -ArgumentList 14,19')
-$text = $text.Replace("$ballCaption.Font = New-UiFont -FamilyName 'Segoe UI' -Size ([single]6.8) -Style ([System.Drawing.FontStyle]::Regular)","$ballCaption.Font = New-UiFont -FamilyName 'Microsoft YaHei UI' -Size ([single]7.4) -Style ([System.Drawing.FontStyle]::Bold)")
+$text = $text.Replace('$ballCaption.Font = New-UiFont -FamilyName ''Segoe UI'' -Size ([single]6.8) -Style ([System.Drawing.FontStyle]::Regular)','$ballCaption.Font = New-UiFont -FamilyName ''Microsoft YaHei UI'' -Size ([single]7.4) -Style ([System.Drawing.FontStyle]::Bold)')
 
 if ($text -ne $before) {
   $utf8Bom = New-Object System.Text.UTF8Encoding($true)
