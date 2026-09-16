@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.9 - 2026-09-16
+
+- Floating monitor now shows the 5-hour quota before the longer-window/total quota for both Personal and Work accounts.
+- Floating format changed to `5H / 总`, with separate Personal and Work rows.
+- `总` uses the meaningful long-window quota: Weekly, plus a valid workspace/monthly limit when available.
+- Enlarged the floating monitor slightly so both values remain readable while keeping the circular floating style.
+- Reordered the detailed Work card to show 5-hour first, workspace/monthly total second, and Weekly third.
+- Kept the 5-minute silent automatic refresh and saved position/size behavior.
+
 ## 0.3.8 - 2026-09-16
 
 - Replaced the always-open dashboard workflow with a desktop floating ball plus on-demand detail panel.
