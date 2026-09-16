@@ -1,0 +1,14 @@
+{
+  "profiles": [
+    {
+      "id": "personal",
+      "label": "个人账号",
+      "codexHome": "~/.codex-personal"
+    },
+    {
+      "id": "work",
+      "label": "工作账号",
+      "codexHome": "~/.codex-work"
+    }
+  ]
+}
