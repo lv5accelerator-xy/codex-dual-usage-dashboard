@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.7 - 2026-09-16
+
+- Fixed the Personal account card being rendered underneath the fixed header.
+- Replaced the quota content area's `Dock=Fill` layout with an explicit area below the 58px header.
+- Increased the minimum client height so both account cards fit without the header covering the first card.
+- Kept the existing automatic refresh interval at 5 minutes.
+
 ## 0.3.6 - 2026-09-16
 
 - Fixed `Path.GetFullPath` startup failure in `launcher.ps1` on Windows PowerShell 5.1.
