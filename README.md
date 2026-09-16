@@ -1,123 +1,102 @@
 # Codex Dual Usage Dashboard
 
-Windows desktop floating quota monitor for two ChatGPT/Codex accounts (Personal + Work).
+Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.3.9**
+Current version: **v0.4.0**
 
-## Main experience
+## Floating monitor
 
-After `start.bat`, the app starts as a small always-available desktop floating monitor instead of opening the full quota window.
+Run `start.bat` to open a compact rounded panel. Aligned columns show the remaining **5-hour** and **long-term** quotas for each account, with a visible update timestamp or stale-data warning.
 
-In v0.3.9 the floating monitor explicitly shows **5H first, total quota second** for each account:
+| Account | 5-hour remaining | Long-term remaining |
+| --- | ---: | ---: |
+| Personal | 100% | 95% |
+| Work | 49% | 21% |
 
-```text
-   5H / 总
-P 100% / 95%
-W  49% / 21%
-```
+*Example values, not live account data.*
 
-- `5H` = current 5-hour limit remaining.
-- `总` = the lower meaningful long-window quota remaining. For Personal this is normally Weekly; for Work it also considers a valid workspace/monthly limit when one is returned.
-- Drag the floating monitor anywhere on the desktop.
-- Left-click it to expand/collapse the full quota panel.
+- **长周期 (long-term)** is the lower remaining percentage of Weekly and a meaningful monthly/workspace limit. It is not a sum or a shared balance. Hover over it to see the source and individual values.
+- **—** means the quota was not provided; **0%** means the reported quota is exhausted.
+- Drag anywhere on the monitor to move it; click to expand/collapse the detail panel.
 - Right-click for refresh, visibility, always-on-top, reset position, account login/switch, logs, and exit.
-- The outer ring changes color according to the lowest meaningful remaining quota.
+- Low remaining values are highlighted individually: amber at 35% or below, red at 15% or below. Old/unknown values are muted.
 
-## Resizable detail panel
+## Detail panel
 
-The expanded quota panel is movable and freely resizable. Quota order is now consistent:
+The movable, resizable panel uses a neutral dark theme, consistent Chinese typography, larger primary numbers, rounded quota bars, and direct account login actions. All percentages represent **remaining** quota.
 
-1. 5 小时限额
-2. 工作空间/月度总额度（when provided）
-3. 每周限额
+Quota order:
 
-The Personal account continues to show 5-hour first and Weekly second.
+1. 5-hour remaining
+2. Workspace/monthly remaining, when a meaningful limit is provided
+3. Weekly remaining
+
+Hover over reset times for the exact local timestamp and monthly used/limit details. Smaller windows scroll vertically; refreshes preserve the scroll position. Layout dimensions scale with the Windows system DPI when the app starts. Moving between monitors with different DPI settings may require restarting the app for crisp sizing; per-monitor dynamic DPI is not implemented.
+
+## Refresh and data freshness
+
+- Refresh runs silently every **5 minutes** and can also be triggered manually.
+- Both manual and automatic failures retain the last successful values and show **数据未更新**.
+- One account can continue updating while the other retains its last successful data. Profiles are matched by ID, not array order.
+- Data older than ten minutes is marked stale even if there is no explicit refresh error.
+- A read taking longer than 150 seconds is timed out so refresh does not remain permanently disabled.
+- Retained values are in-memory only. Restarting the app waits for a fresh read.
 
 ## Persistent UI settings
 
-The app saves local UI preferences to:
-
-```text
-ui-settings.json
-```
-
-It remembers floating position, panel position/size, floating monitor visibility, and always-on-top preference. `ui-settings.json` is ignored by Git.
-
-## Automatic refresh
-
-The app refreshes silently in the background every **5 minutes**. If a background refresh fails, the previous successful data remains visible.
-
-Manual refresh is available from the panel, floating-monitor right-click menu, or system-tray menu.
+`ui-settings.json` remembers monitor position, detail-panel position/size, visibility, and always-on-top preference. Existing v0.3.x settings remain compatible. Settings are ignored by Git.
 
 ## Requirements
 
 - Windows 10/11
 - Windows PowerShell 5.1+
 - Codex CLI
-- Node.js is **not required**
+- The dashboard itself has no Node.js dependency
 
 ## First run
 
-Run:
-
-```text
-first-run-setup.bat
-```
-
-This creates and logs in two independent Codex homes:
+Run `first-run-setup.bat` to set up and log in two independent Codex homes:
 
 - Personal: `%USERPROFILE%\.codex-personal`
 - Work: `%USERPROFILE%\.codex-work`
 
-## Start
+Run `start.bat` normally, or `start-debug.bat` for startup diagnostics. Quit the existing tray instance before starting an updated version.
 
-```text
-start.bat
+If startup fails, check `logs/startup.log`, `logs/startup-error.log`, `logs/tray.log`, and `logs/worker.log`.
+
+## Validation
+
+Quota selection, missing values, stale-data retention, recovery, and account ordering are tested without account access:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/ui-model.tests.ps1
 ```
 
-For visible startup diagnostics:
+On Windows, exercise the actual WinForms controls, resizing, and failure/loading states with fixture data:
 
-```text
-start-debug.bat
+```powershell
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File tray.ps1 -SmokeTest
 ```
 
-If startup fails, check:
-
-```text
-logs\startup.log
-logs\startup-error.log
-logs\tray.log
-logs\worker.log
-```
-
-## Security
-
-The repository does not contain ChatGPT/Codex login credentials. Authentication remains in the user's local Codex profile directories and should never be committed.
-
-Ignored local data includes:
-
-```text
-logs/
-usage-result.json
-ui-settings.json
-.codex/
-.codex-personal/
-.codex-work/
-```
+The smoke test does not start a quota worker, log in, or modify saved UI settings. It writes fixture screenshots to the ignored `artifacts/` directory. GitHub Actions runs both checks using Windows PowerShell 5.1 and publishes screenshots/logs in the `windows-ui-preview` artifact.
 
 ## Project files
 
-- `tray.ps1` — floating UI, resizable panel, tray icon, rendering, refresh timers
-- `patch-v039.ps1` — v0.3.9 display/order migration applied by the launcher for fresh GitHub ZIP downloads
-- `usage-reader.ps1` — Codex app-server quota reader
-- `usage-worker.ps1` — background refresh worker
-- `codex-tools.ps1` — Codex CLI discovery/helpers
-- `setup-account.ps1` — account setup/login logic
-- `profiles.json` — profile labels and local Codex home paths
-- `launcher.ps1` — encoding normalization, v0.3.9 display migration, syntax check, startup watchdog
-- `start.bat` — normal hidden startup
-- `start-debug.bat` — visible/debug startup
+- `tray.ps1` — floating monitor, detail panel, tray actions, refresh lifecycle
+- `ui-model.ps1` — quota selection and account-specific freshness rules
+- `ui-controls.cs` — small native WinForms drawing controls compiled by PowerShell at startup
+- `usage-reader.ps1` / `usage-worker.ps1` — existing quota reader and background worker
+- `codex-tools.ps1` / `setup-account.ps1` — CLI discovery and account login
+- `profiles.json` — account labels and local profile paths
+- `launcher.ps1` — encoding normalization, syntax check, startup watchdog
+- `tests/` — presentation-rule regressions and Windows UI smoke test
 
-## GitHub ZIP note
+The v0.3.9 runtime display patch has been removed. The launcher runs the checked-in UI directly.
 
-If you download the repository using **Code → Download ZIP**, extract the ZIP completely before running `start.bat`. The launcher normalizes PowerShell files for Windows PowerShell 5.1, applies the current display migration when required, validates `tray.ps1`, and then starts the floating UI.
+## Security
+
+Authentication stays in the user's local Codex profile directories. Never commit login credentials. Logs, runtime results, UI preferences, test screenshots, and local Codex profiles are ignored by Git.
+
+## GitHub ZIP downloads
+
+Extract **Code → Download ZIP** completely before running `start.bat`. The launcher normalizes PowerShell encoding for Windows PowerShell 5.1 and checks `tray.ps1` syntax before starting the UI. Keep `ui-controls.cs` and `ui-model.ps1` next to `tray.ps1`.

@@ -1,0 +1,37 @@
+name: Validate Windows UI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse all scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count) { throw ($_.FullName + ': ' + ($parseErrors.Message -join '; ')) }
+          }
+      - name: Check quota and stale-data behavior
+        shell: powershell
+        run: ./tests/ui-model.tests.ps1
+      - name: Render native UI and exercise resize and failure states
+        shell: powershell
+        run: ./tray.ps1 -SmokeTest
+      - name: Upload fixture screenshots and diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ui-preview
+          path: |
+            artifacts/*.png
+            logs/*.log

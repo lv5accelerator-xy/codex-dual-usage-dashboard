@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 - 2026-09-16
+
+- Replaced the crowded circular monitor with a rounded, DPI-scaled two-account panel with aligned 5-hour and long-term quota columns.
+- Renamed the ambiguous total label to 长周期 and added tooltips identifying the limiting weekly or meaningful monthly/workspace quota.
+- Refined the detail panel with neutral dark surfaces, unified Chinese typography, prominent remaining values, rounded bars, and account-level login actions.
+- Preserved last successful data on both manual and automatic refresh failures, including independent account failures matched by account ID.
+- Added visible stale-data states to the floating panel and detail cards, a ten-minute freshness check, and a refresh timeout.
+- Preserved scrolling across refreshes and moved account content into layout containers with system-DPI scaling.
+- Integrated display behavior into the checked-in UI and removed the runtime v0.3.9 source patch.
+- Added quota-state regression tests and a Windows PowerShell 5.1 native UI smoke test with fixture screenshots.
+
 ## 0.3.9 - 2026-09-16
 
 - Floating monitor now shows the 5-hour quota before the longer-window/total quota for both Personal and Work accounts.

@@ -1,4 +1,4 @@
-param([switch]$DebugMode)
+﻿param([switch]$DebugMode)
 
 $ErrorActionPreference = 'Stop'
 
@@ -58,19 +58,13 @@ function Test-TraySyntax {
 }
 
 try {
-  Write-StartupLog '===== launcher v0.3.9 starting ====='
+  Write-StartupLog '===== launcher v0.4.0 starting ====='
   Normalize-PowerShellFiles
   Write-StartupLog 'PowerShell source encoding normalized.'
 
   $tray = Join-Path $root 'tray.ps1'
   if (-not (Test-Path -LiteralPath $tray)) {
     throw ('tray.ps1 not found: ' + $tray)
-  }
-
-  $displayPatch = Join-Path $root 'patch-v039.ps1'
-  if (Test-Path -LiteralPath $displayPatch) {
-    & $displayPatch -TrayPath $tray -LogPath $startupLog
-    Write-StartupLog 'v0.3.9 display patch checked/applied.'
   }
 
   Test-TraySyntax -Path $tray

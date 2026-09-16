@@ -19,3 +19,6 @@ Thumbs.db
 .codex/
 .codex-personal/
 .codex-work/
+
+# Native UI smoke-test output (fixture data only)
+artifacts/

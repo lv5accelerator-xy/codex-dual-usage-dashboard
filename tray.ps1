@@ -1,3 +1,5 @@
+﻿param([switch]$SmokeTest)
+
 $ErrorActionPreference = 'Stop'
 
 $script:Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -8,7 +10,6 @@ $script:CachePath = Join-Path $script:LogDir 'usage-result.json'
 $script:UiSettingsPath = Join-Path $script:Root 'ui-settings.json'
 $script:WorkerProcess = $null
 $script:RefreshPending = $false
-$script:RefreshSilent = $false
 $script:LastData = $null
 $script:Exiting = $false
 $script:Mutex = $null
@@ -19,14 +20,19 @@ $script:NotifyIcon = $null
 $script:ContentPanel = $null
 $script:StatusLabel = $null
 $script:RefreshButton = $null
-$script:BallPersonalLabel = $null
-$script:BallWorkLabel = $null
-$script:BallAccent = $null
 $script:BallMouseDown = $null
 $script:BallOrigin = $null
 $script:BallDragged = $false
 $script:UiSettings = $null
 $script:Theme = @{}
+$script:Fonts = @{}
+$script:BallCells = @{}
+$script:ResetLabels = @()
+$script:CardStates = @()
+$script:RefreshError = ''
+$script:RefreshStarted = $null
+$script:UiScale = 1.0
+. (Join-Path $script:Root 'ui-model.ps1')
 
 if (-not (Test-Path -LiteralPath $script:LogDir)) {
   New-Item -ItemType Directory -Force -Path $script:LogDir | Out-Null
@@ -43,6 +49,7 @@ function Write-TrayLog {
 function Show-FatalError {
   param([string]$Message)
   Write-TrayLog ('FATAL: ' + $Message)
+  if ($SmokeTest) { [Console]::Error.WriteLine($Message); return }
   try {
     [System.Windows.Forms.MessageBox]::Show(
       ($Message + "`r`n`r`n日志：" + $script:TrayLog),
@@ -54,16 +61,25 @@ function Show-FatalError {
 }
 
 try {
-  Write-TrayLog '===== v0.3.8 tray starting ====='
+  Write-TrayLog '===== v0.4.0 tray starting ====='
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
+  if (-not ('CodexUsage.Surface' -as [type])) {
+    Add-Type -Path (Join-Path $script:Root 'ui-controls.cs') -ReferencedAssemblies System.Windows.Forms,System.Drawing
+  }
+  [CodexUsage.NativeDisplay]::EnableDpi()
   [System.Windows.Forms.Application]::EnableVisualStyles()
+  $desktopGraphics = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero)
+  try { $script:UiScale = $desktopGraphics.DpiX / 96.0 } finally { $desktopGraphics.Dispose() }
+  $script:ToolTip = New-Object System.Windows.Forms.ToolTip
+  $script:ToolTip.AutoPopDelay = 15000
+  $script:ToolTip.InitialDelay = 400
 
   $createdNew = $false
-  $script:Mutex = New-Object System.Threading.Mutex($true, 'CodexDualUsageTray', [ref]$createdNew)
+  $script:Mutex = New-Object System.Threading.Mutex($true, $(if ($SmokeTest) { 'CodexDualUsageTraySmokeTest' } else { 'CodexDualUsageTray' }), [ref]$createdNew)
   if (-not $createdNew) {
     [System.Windows.Forms.MessageBox]::Show(
-      'Codex 双账号额度已经在运行。请检查桌面悬浮球或任务栏右下角图标。',
+      'Codex 双账号额度已经在运行。请检查桌面悬浮面板或任务栏右下角图标。',
       'Codex 双账号额度',
       [System.Windows.Forms.MessageBoxButtons]::OK,
       [System.Windows.Forms.MessageBoxIcon]::Information
@@ -72,49 +88,93 @@ try {
   }
 
   $script:Theme = @{
-    PopupBack = [System.Drawing.Color]::FromArgb(8,16,25)
-    HeaderBack = [System.Drawing.Color]::FromArgb(12,27,43)
-    CardBack = [System.Drawing.Color]::FromArgb(15,31,48)
-    CardBorder = [System.Drawing.Color]::FromArgb(42,83,118)
-    TextPrimary = [System.Drawing.Color]::FromArgb(235,243,251)
-    TextMuted = [System.Drawing.Color]::FromArgb(124,153,181)
-    Cyan = [System.Drawing.Color]::FromArgb(0,214,255)
-    CyanSoft = [System.Drawing.Color]::FromArgb(111,228,255)
-    Danger = [System.Drawing.Color]::FromArgb(255,92,92)
-    Warning = [System.Drawing.Color]::FromArgb(255,177,66)
-    Good = [System.Drawing.Color]::FromArgb(0,208,132)
-    Track = [System.Drawing.Color]::FromArgb(35,56,76)
-    ButtonBack = [System.Drawing.Color]::FromArgb(20,42,65)
-    ButtonBorder = [System.Drawing.Color]::FromArgb(62,120,168)
-    BallBack = [System.Drawing.Color]::FromArgb(11,25,40)
+    PopupBack = [System.Drawing.ColorTranslator]::FromHtml('#16171B')
+    HeaderBack = [System.Drawing.ColorTranslator]::FromHtml('#16171B')
+    CardBack = [System.Drawing.ColorTranslator]::FromHtml('#202228')
+    CardBorder = [System.Drawing.ColorTranslator]::FromHtml('#343740')
+    TextPrimary = [System.Drawing.ColorTranslator]::FromHtml('#F0F1F4')
+    TextMuted = [System.Drawing.ColorTranslator]::FromHtml('#A1A5B2')
+    Danger = [System.Drawing.ColorTranslator]::FromHtml('#F08080')
+    Warning = [System.Drawing.ColorTranslator]::FromHtml('#E5B66F')
+    Good = [System.Drawing.ColorTranslator]::FromHtml('#8A9ED6')
+    Track = [System.Drawing.ColorTranslator]::FromHtml('#30333C')
+    ButtonBack = [System.Drawing.ColorTranslator]::FromHtml('#303540')
+    ButtonBorder = [System.Drawing.ColorTranslator]::FromHtml('#454B59')
+    BallBack = [System.Drawing.ColorTranslator]::FromHtml('#202228')
   }
-  $script:BallAccent = $script:Theme.Cyan
+
+  function U { param([double]$Value) return [int][Math]::Round($Value * $script:UiScale) }
 
   function New-UiFont {
-    param(
-      [string]$FamilyName,
-      [single]$Size,
-      [System.Drawing.FontStyle]$Style = [System.Drawing.FontStyle]::Regular
-    )
-
-    try {
-      $ctor = [System.Drawing.Font].GetConstructor([Type[]]@(
-        [string],
-        [single],
-        [System.Drawing.FontStyle],
-        [System.Drawing.GraphicsUnit]
-      ))
-      if ($null -eq $ctor) { throw '找不到 System.Drawing.Font 的目标构造函数。' }
-      return [System.Drawing.Font]$ctor.Invoke(@(
-        [string]$FamilyName,
-        [single]$Size,
-        [System.Drawing.FontStyle]$Style,
-        [System.Drawing.GraphicsUnit]::Point
-      ))
-    } catch {
-      Write-TrayLog ('Font fallback: ' + $_.Exception.Message)
-      return [System.Drawing.SystemFonts]::MessageBoxFont
+    param([single]$Size = 10,[switch]$Bold)
+    $key = "$Size/$($Bold.IsPresent)"
+    if (-not $script:Fonts.ContainsKey($key)) {
+      $style = if ($Bold) { [System.Drawing.FontStyle]::Bold } else { [System.Drawing.FontStyle]::Regular }
+      $ctor = [System.Drawing.Font].GetConstructor([Type[]]@([string],[single],[System.Drawing.FontStyle],[System.Drawing.GraphicsUnit]))
+      $script:Fonts[$key] = [System.Drawing.Font]$ctor.Invoke(@('Microsoft YaHei UI',[single]$Size,$style,[System.Drawing.GraphicsUnit]::Point))
     }
+    return $script:Fonts[$key]
+  }
+
+  function New-Label {
+    param([string]$Text = '',[single]$Size = 10,[switch]$Muted,[switch]$Bold)
+    $label = New-Object System.Windows.Forms.Label
+    $label.Text = $Text
+    $label.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $label.Margin = New-Object System.Windows.Forms.Padding -ArgumentList 0
+    $label.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    $label.AutoEllipsis = $true
+    $label.Font = New-UiFont -Size $Size -Bold:$Bold
+    $label.ForeColor = if ($Muted) { $script:Theme.TextMuted } else { $script:Theme.TextPrimary }
+    return $label
+  }
+
+  function New-Grid {
+    param([int]$Columns = 1)
+    $grid = New-Object System.Windows.Forms.TableLayoutPanel
+    $grid.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $grid.Margin = New-Object System.Windows.Forms.Padding -ArgumentList 0
+    $grid.Padding = New-Object System.Windows.Forms.Padding -ArgumentList 0
+    $grid.ColumnCount = $Columns
+    $grid.RowCount = 0
+    return $grid
+  }
+
+  function Add-GridRow {
+    param($Grid,[double]$Height)
+    $Grid.RowCount++
+    [void]$Grid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle -ArgumentList ([System.Windows.Forms.SizeType]::Absolute),([single](U $Height))))
+  }
+
+  function New-Button {
+    param([string]$Text)
+    $button = New-Object System.Windows.Forms.Button
+    $button.Text = $Text
+    $button.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $button.Font = New-UiFont -Size 9
+    $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $button.BackColor = $script:Theme.ButtonBack
+    $button.ForeColor = $script:Theme.TextPrimary
+    $button.FlatAppearance.BorderColor = $script:Theme.ButtonBorder
+    $button.FlatAppearance.MouseOverBackColor = $script:Theme.ButtonBorder
+    $button.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $button.Margin = New-Object System.Windows.Forms.Padding -ArgumentList 0
+    return $button
+  }
+
+  function Get-BarColor {
+    param($Remaining)
+    if ($null -eq $Remaining) { return $script:Theme.Track }
+    if ([double]$Remaining -le 15) { return $script:Theme.Danger }
+    if ([double]$Remaining -le 35) { return $script:Theme.Warning }
+    return $script:Theme.Good
+  }
+
+  function Get-ValueColor {
+    param($Remaining,[bool]$Stale = $false)
+    if ($Stale -or $null -eq $Remaining) { return $script:Theme.TextMuted }
+    if ([double]$Remaining -le 35) { return (Get-BarColor $Remaining) }
+    return $script:Theme.TextPrimary
   }
 
   function Get-DefaultUiSettings {
@@ -123,8 +183,8 @@ try {
       ballY = $null
       panelX = $null
       panelY = $null
-      panelWidth = 430
-      panelHeight = 640
+      panelWidth = (U 440)
+      panelHeight = (U 840)
       topMost = $true
       ballVisible = $true
     }
@@ -132,6 +192,7 @@ try {
 
   function Load-UiSettings {
     $settings = Get-DefaultUiSettings
+    if ($SmokeTest) { return $settings }
     if (Test-Path -LiteralPath $script:UiSettingsPath) {
       try {
         $loaded = Get-Content -LiteralPath $script:UiSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -148,6 +209,7 @@ try {
   }
 
   function Save-UiSettings {
+    if ($SmokeTest) { return }
     try {
       if ($null -ne $script:Ball) {
         $script:UiSettings.ballX = $script:Ball.Left
@@ -185,7 +247,7 @@ try {
 
   function Get-DefaultBallLocation {
     $area = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    return (New-Object System.Drawing.Point -ArgumentList ($area.Right - 118),($area.Bottom - 180))
+    return (New-Object System.Drawing.Point -ArgumentList ($area.Right - (U 268)),($area.Bottom - (U 180)))
   }
 
   function Get-DefaultPanelLocation {
@@ -196,377 +258,285 @@ try {
     return (New-Object System.Drawing.Point -ArgumentList $x,$y)
   }
 
-  function Format-Percent {
-    param($Value)
-    if ($null -eq $Value) { return '—' }
-    try { return ('{0:0}%' -f [double]$Value) } catch { return '—' }
-  }
-
-  function Get-ResetText {
-    param([string]$Iso)
-    if ([string]::IsNullOrWhiteSpace($Iso)) { return '暂无重置时间' }
-    try {
-      $target = [DateTimeOffset]::Parse($Iso).ToLocalTime()
-      $span = $target - [DateTimeOffset]::Now
-      if ($span.TotalSeconds -le 0) { return '即将重置' }
-      if ($span.TotalDays -ge 1) { return ('{0}天 {1}小时 后重置' -f [Math]::Floor($span.TotalDays), $span.Hours) }
-      if ($span.TotalHours -ge 1) { return ('{0}小时 {1}分钟 后重置' -f [Math]::Floor($span.TotalHours), $span.Minutes) }
-      return ('{0}分钟 后重置' -f [Math]::Max(1, [Math]::Floor($span.TotalMinutes)))
-    } catch { return '暂无重置时间' }
-  }
-
-  function Get-BarColor {
-    param($Remaining)
-    if ($null -eq $Remaining) { return $script:Theme.Track }
-    $n = [double]$Remaining
-    if ($n -le 15) { return $script:Theme.Danger }
-    if ($n -le 35) { return $script:Theme.Warning }
-    return $script:Theme.Good
-  }
-
-  function Get-ProfileMinimum {
-    param($Profile)
-    if ($null -eq $Profile -or -not $Profile.ok) { return $null }
-    $values = @()
-    foreach ($window in @($Profile.fiveHour,$Profile.weekly)) {
-      if ($null -ne $window -and $null -ne $window.remainingPercent) {
-        $values += [double]$window.remainingPercent
-      }
-    }
-    if ($null -ne $Profile.individualLimit -and $null -ne $Profile.individualLimit.remainingPercent) {
-      $limitIsMeaningful = $true
-      if ($null -ne $Profile.individualLimit.limit) {
-        try { $limitIsMeaningful = ([double]$Profile.individualLimit.limit -gt 0) } catch {}
-      }
-      if ($limitIsMeaningful) {
-        $values += [double]$Profile.individualLimit.remainingPercent
-      }
-    }
-    if ($values.Count -eq 0) { return $null }
-    return [double](($values | Measure-Object -Minimum).Minimum)
-  }
-
-  function Update-BallSummary {
-    param($Data)
-    if ($null -eq $script:BallPersonalLabel -or $null -eq $script:BallWorkLabel) { return }
-
-    $profiles = @($Data.profiles)
-    $personal = $null
-    $work = $null
-    if ($profiles.Count -gt 0) { $personal = Get-ProfileMinimum $profiles[0] }
-    if ($profiles.Count -gt 1) { $work = Get-ProfileMinimum $profiles[1] }
-
-    $pText = if ($null -eq $personal) { '--' } else { ('{0:0}%' -f $personal) }
-    $wText = if ($null -eq $work) { '--' } else { ('{0:0}%' -f $work) }
-    $script:BallPersonalLabel.Text = 'P ' + $pText
-    $script:BallWorkLabel.Text = 'W ' + $wText
-
-    $all = @()
-    if ($null -ne $personal) { $all += $personal }
-    if ($null -ne $work) { $all += $work }
-    if ($all.Count -eq 0) {
-      $script:BallAccent = $script:Theme.Cyan
-    } else {
-      $min = [double](($all | Measure-Object -Minimum).Minimum)
-      $script:BallAccent = Get-BarColor $min
-    }
-    try { $script:Ball.Invalidate() } catch {}
-  }
-
   function Clear-Content {
-    $script:ContentPanel.SuspendLayout()
-    try {
-      while ($script:ContentPanel.Controls.Count -gt 0) {
-        $control = $script:ContentPanel.Controls[0]
-        $script:ContentPanel.Controls.RemoveAt(0)
-        try { $control.Dispose() } catch {}
-      }
-    } finally {
-      $script:ContentPanel.ResumeLayout($true)
+    $script:ResetLabels = @()
+    $script:CardStates = @()
+    $script:ToolTip.RemoveAll()
+    while ($script:ContentPanel.Controls.Count -gt 0) {
+      $control = $script:ContentPanel.Controls[0]
+      $script:ContentPanel.Controls.RemoveAt(0)
+      $control.Dispose()
     }
   }
 
   function Add-QuotaRow {
-    param(
-      [System.Windows.Forms.Control]$Parent,
-      [string]$Title,
-      $Window,
-      [int]$Y,
-      [string]$Detail = ''
-    )
-
-    $rowWidth = [Math]::Max(300, $Parent.ClientSize.Width - 28)
-
-    $titleLabel = New-Object System.Windows.Forms.Label
-    $titleLabel.Text = $Title
-    $titleLabel.AutoSize = $true
-    $titleLabel.Location = New-Object System.Drawing.Point -ArgumentList 14,$Y
-    $titleLabel.Font = New-UiFont -FamilyName 'Segoe UI Semibold' -Size ([single]9.3) -Style ([System.Drawing.FontStyle]::Regular)
-    $titleLabel.ForeColor = $script:Theme.TextPrimary
-    $Parent.Controls.Add($titleLabel)
-
-    $pct = New-Object System.Windows.Forms.Label
-    $pct.AutoSize = $false
-    $pct.Size = New-Object System.Drawing.Size -ArgumentList 84,22
-    $pct.Location = New-Object System.Drawing.Point -ArgumentList ($Parent.ClientSize.Width - 98),($Y-3)
-    $pct.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+    param($Parent,[string]$Title,$Window,[int]$Row,[switch]$Primary,[string]$Detail = '')
+    $grid = New-Grid -Columns 2
+    [void]$grid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]60)))
+    [void]$grid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]40)))
+    Add-GridRow $grid $(if ($Primary) { 48 } else { 30 })
+    Add-GridRow $grid 6
+    Add-GridRow $grid 28
+    $titleLabel = New-Label -Text $Title -Size 10
+    $grid.Controls.Add($titleLabel,0,0)
+    $remaining = if ($null -ne $Window) { $Window.remainingPercent } else { $null }
+    $pct = New-Label -Text (Format-Percent $remaining) -Size $(if ($Primary) { 23 } else { 15 }) -Bold
     $pct.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
-    $pct.Font = New-UiFont -FamilyName 'Segoe UI Semibold' -Size ([single]10.5) -Style ([System.Drawing.FontStyle]::Regular)
-    $pct.ForeColor = $script:Theme.CyanSoft
-    $Parent.Controls.Add($pct)
-
-    $track = New-Object System.Windows.Forms.Panel
-    $track.Location = New-Object System.Drawing.Point -ArgumentList 14,($Y+27)
-    $track.Size = New-Object System.Drawing.Size -ArgumentList $rowWidth,7
-    $track.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
-    $track.BackColor = $script:Theme.Track
-    $Parent.Controls.Add($track)
-
-    $fill = New-Object System.Windows.Forms.Panel
-    $fill.Location = New-Object System.Drawing.Point -ArgumentList 0,0
-    $fill.Height = 7
-    $track.Controls.Add($fill)
-
-    $reset = New-Object System.Windows.Forms.Label
-    $reset.AutoSize = $false
-    $reset.Size = New-Object System.Drawing.Size -ArgumentList $rowWidth,18
-    $reset.Location = New-Object System.Drawing.Point -ArgumentList 14,($Y+39)
-    $reset.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
-    $reset.ForeColor = $script:Theme.TextMuted
-    $reset.Font = New-UiFont -FamilyName 'Microsoft YaHei UI' -Size ([single]8.1) -Style ([System.Drawing.FontStyle]::Regular)
-    $Parent.Controls.Add($reset)
-
-    if ($null -eq $Window) {
-      $pct.Text = '—'
-      $fill.Width = 0
-      $track.Tag = [double]0
-      $reset.Text = '当前账号未返回此额度窗口'
-    } else {
-      $remaining = $Window.remainingPercent
-      $pct.Text = Format-Percent $remaining
-      $safe = 0.0
-      if ($null -ne $remaining) {
-        $safe = [Math]::Max(0,[Math]::Min(100,[double]$remaining))
-      }
-      $track.Tag = [double]$safe
-      $fill.Width = [int][Math]::Round($track.ClientSize.Width * $safe / 100)
-      $fill.BackColor = Get-BarColor $remaining
-      $resetText = Get-ResetText ([string]$Window.resetsAt)
-      if ([string]::IsNullOrWhiteSpace($Detail)) { $reset.Text = $resetText }
-      else { $reset.Text = $Detail + ' · ' + $resetText }
-    }
-
-    $track.Add_SizeChanged({
-      param($sender,$eventArgs)
-      try {
-        if ($sender.Controls.Count -gt 0) {
-          $ratio = [double]$sender.Tag
-          $sender.Controls[0].Width = [int][Math]::Round($sender.ClientSize.Width * $ratio / 100)
-        }
-      } catch {}
-    })
+    $pct.ForeColor = Get-ValueColor $remaining
+    $grid.Controls.Add($pct,1,0)
+    $bar = New-Object CodexUsage.QuotaBar
+    $bar.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $bar.Margin = New-Object System.Windows.Forms.Padding -ArgumentList 0
+    $bar.Value = if ($null -eq $remaining) { 0 } else { [double]$remaining }
+    $bar.FillColor = Get-BarColor $remaining
+    $grid.Controls.Add($bar,0,1)
+    $grid.SetColumnSpan($bar,2)
+    $reset = New-Label -Size 9 -Muted
+    $reset.Tag = [pscustomobject]@{ window = $Window; detail = $Detail }
+    $script:ResetLabels += $reset
+    $grid.Controls.Add($reset,0,2)
+    $grid.SetColumnSpan($reset,2)
+    $Parent.Controls.Add($grid,0,$Row)
+    $Parent.SetColumnSpan($grid,2)
   }
 
   function Add-AccountCard {
-    param($Profile,[int]$Top)
-
-    $hasMonthly = $null -ne $Profile.individualLimit
-    $height = if ($hasMonthly) { 226 } else { 168 }
-    $cardWidth = [Math]::Max(340, $script:ContentPanel.ClientSize.Width - 24)
-
-    $card = New-Object System.Windows.Forms.Panel
-    $card.Location = New-Object System.Drawing.Point -ArgumentList 12,$Top
-    $card.Size = New-Object System.Drawing.Size -ArgumentList $cardWidth,$height
-    $card.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    param($Profile)
+    $hasMonthly = Test-MeaningfulLimit $Profile.individualLimit
+    $card = New-Object CodexUsage.Surface
+    $card.Radius = U 12
     $card.BackColor = $script:Theme.CardBack
-    $card.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-    $card.Add_Paint({
-      param($sender,$eventArgs)
-      $rect = New-Object System.Drawing.Rectangle -ArgumentList 0,0,($sender.Width - 1),($sender.Height - 1)
-      $pen = New-Object System.Drawing.Pen -ArgumentList $script:Theme.CardBorder,([single]1.0)
-      $eventArgs.Graphics.DrawRectangle($pen,$rect)
-      $pen.Dispose()
-    })
-    $script:ContentPanel.Controls.Add($card)
-
-    $name = New-Object System.Windows.Forms.Label
-    $name.AutoSize = $true
-    $name.Location = New-Object System.Drawing.Point -ArgumentList 13,10
-    $name.Font = New-UiFont -FamilyName 'Segoe UI Semibold' -Size ([single]10.4) -Style ([System.Drawing.FontStyle]::Regular)
-    $name.ForeColor = $script:Theme.TextPrimary
-    $name.Text = [string]$Profile.label
-    $card.Controls.Add($name)
-
-    $plan = New-Object System.Windows.Forms.Label
-    $plan.AutoSize = $false
-    $plan.Size = New-Object System.Drawing.Size -ArgumentList 170,22
-    $plan.Location = New-Object System.Drawing.Point -ArgumentList ($card.ClientSize.Width - 184),7
-    $plan.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+    $card.BorderColor = $script:Theme.CardBorder
+    $card.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 16)
+    $card.Margin = New-Object System.Windows.Forms.Padding -ArgumentList 0,0,0,(U 12)
+    $card.Height = if (-not $Profile.ok) { U 206 } elseif ($hasMonthly) { U 366 } else { U 284 }
+    $grid = New-Grid -Columns 2
+    [void]$grid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]60)))
+    [void]$grid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]40)))
+    Add-GridRow $grid 36
+    $name = New-Label -Text ([string]$Profile.label) -Size 11 -Bold
+    $grid.Controls.Add($name,0,0)
+    $plan = New-Label -Text ([string]$Profile.planType) -Size 9 -Muted
+    if ([string]::IsNullOrWhiteSpace($plan.Text) -or $plan.Text -eq 'unknown') { $plan.Text = '账号' }
     $plan.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
-    $plan.ForeColor = $script:Theme.TextMuted
-    $plan.Font = New-UiFont -FamilyName 'Consolas' -Size ([single]8.5) -Style ([System.Drawing.FontStyle]::Regular)
-    $plan.Text = if ($Profile.ok) { [string]$Profile.planType } else { '读取失败' }
-    $card.Controls.Add($plan)
-
-    if (-not $Profile.ok) {
-      $err = New-Object System.Windows.Forms.Label
-      $err.AutoSize = $false
-      $err.Location = New-Object System.Drawing.Point -ArgumentList 14,43
-      $err.Size = New-Object System.Drawing.Size -ArgumentList ($card.ClientSize.Width - 28),105
-      $err.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
-      $err.ForeColor = $script:Theme.Danger
-      $err.Font = New-UiFont -FamilyName 'Microsoft YaHei UI' -Size ([single]8.5) -Style ([System.Drawing.FontStyle]::Regular)
-      $err.Text = ([string]$Profile.error) + "`r`n`r`n右键悬浮球或托盘图标可以重新登录此账号。"
-      $card.Controls.Add($err)
-      return $height
-    }
-
-    if ($hasMonthly) {
-      $detail = ''
-      if ($null -ne $Profile.individualLimit.used -and $null -ne $Profile.individualLimit.limit) {
-        $detail = ('已使用 {0} / {1}' -f $Profile.individualLimit.used,$Profile.individualLimit.limit)
+    $grid.Controls.Add($plan,1,0)
+    $card.Controls.Add($grid)
+    if ($Profile.ok) {
+      Add-GridRow $grid 100
+      Add-QuotaRow $grid '5 小时 · 剩余' $Profile.fiveHour 1 -Primary
+      $row = 2
+      if ($hasMonthly) {
+        Add-GridRow $grid 82
+        $detail = ''
+        if ($null -ne $Profile.individualLimit.used -and $null -ne $Profile.individualLimit.limit) {
+          $detail = '已用 {0} / {1}' -f $Profile.individualLimit.used,$Profile.individualLimit.limit
+        }
+        Add-QuotaRow $grid '工作空间 / 月度' $Profile.individualLimit $row -Detail $detail
+        $row++
       }
-      $monthlyTitle = if ([string]$Profile.planType -match 'business|team|enterprise|edu') { '工作空间每月额度上限' } else { '月度额度上限' }
-      Add-QuotaRow -Parent $card -Title $monthlyTitle -Window $Profile.individualLimit -Y 38 -Detail $detail
-      Add-QuotaRow -Parent $card -Title '5 小时限额' -Window $Profile.fiveHour -Y 98
-      Add-QuotaRow -Parent $card -Title '每周限额' -Window $Profile.weekly -Y 158
+      Add-GridRow $grid 82
+      Add-QuotaRow $grid '每周 · 剩余' $Profile.weekly $row
+      $row++
     } else {
-      Add-QuotaRow -Parent $card -Title '5 小时限额' -Window $Profile.fiveHour -Y 38
-      Add-QuotaRow -Parent $card -Title '每周限额' -Window $Profile.weekly -Y 98
+      Add-GridRow $grid 104
+      $errorLabel = New-Label -Text "暂时无法读取额度。`r`n请重试，或重新登录这个账号。" -Size 10 -Muted
+      $grid.Controls.Add($errorLabel,0,1)
+      $grid.SetColumnSpan($errorLabel,2)
+      $script:ToolTip.SetToolTip($errorLabel,[string]$Profile.error)
+      $row = 2
     }
-    return $height
+    Add-GridRow $grid 32
+    $state = New-Label -Size 9 -Muted
+    $grid.Controls.Add($state,0,$row)
+    $script:CardStates += [pscustomobject]@{ label = $state; profile = $Profile }
+    $login = New-Button '重新登录'
+    $login.Tag = [string]$Profile.id
+    $login.AccessibleName = [string]$Profile.label + '：重新登录'
+    $login.Add_Click({ param($sender,$eventArgs) Start-Login ([string]$sender.Tag) })
+    $grid.Controls.Add($login,1,$row)
+    $script:ContentPanel.Controls.Add($card)
   }
 
-  function Render-Error {
-    param([string]$Message)
-    Clear-Content
-    $label = New-Object System.Windows.Forms.Label
-    $label.AutoSize = $false
-    $label.Location = New-Object System.Drawing.Point -ArgumentList 16,24
-    $label.Size = New-Object System.Drawing.Size -ArgumentList ([Math]::Max(320,$script:ContentPanel.ClientSize.Width - 32)),180
-    $label.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
-    $label.ForeColor = $script:Theme.Danger
-    $label.Font = New-UiFont -FamilyName 'Microsoft YaHei UI' -Size ([single]9) -Style ([System.Drawing.FontStyle]::Regular)
-    $label.Text = "读取额度失败：`r`n`r`n" + $Message + "`r`n`r`n程序会继续运行。你可以右键悬浮球重新登录或再次刷新。"
-    $script:ContentPanel.Controls.Add($label)
-    $script:StatusLabel.Text = '读取失败 · ' + (Get-Date).ToString('HH:mm:ss')
+  function Update-CardWidths {
+    if ($null -eq $script:ContentPanel) { return }
+    $width = [Math]::Max((U 300), $script:ContentPanel.ClientSize.Width - $script:ContentPanel.Padding.Horizontal - [System.Windows.Forms.SystemInformation]::VerticalScrollBarWidth)
+    foreach ($card in $script:ContentPanel.Controls) { $card.Width = $width }
+  }
+
+  function Update-BallSummary {
+    param($Data)
+    foreach ($id in @('personal','work')) {
+      $profile = Get-DisplayProfile $Data $id
+      $cells = $script:BallCells[$id]
+      if ($null -eq $cells) { continue }
+      $pair = Get-QuotaPair $profile
+      $stale = (Test-ProfileStale $profile) -or -not [string]::IsNullOrEmpty($script:RefreshError)
+      $cells.five.Text = Format-Percent $pair.fiveHour
+      $cells.long.Text = Format-Percent $pair.longTerm
+      $cells.five.ForeColor = Get-ValueColor $pair.fiveHour $stale
+      $cells.long.ForeColor = Get-ValueColor $pair.longTerm $stale
+      $cells.name.ForeColor = if ($stale -and $null -ne $Data) { $script:Theme.Warning } else { $script:Theme.TextMuted }
+      $tip = '长周期显示每周与有效月度额度中，剩余比例较低的一项。'
+      $tip += "`r`n当前来源：" + $pair.source
+      if ($null -ne $profile.weekly) { $tip += "`r`n每周剩余：" + (Format-Percent $profile.weekly.remainingPercent) }
+      if (Test-MeaningfulLimit $profile.individualLimit) { $tip += "`r`n工作空间 / 月度剩余：" + (Format-Percent $profile.individualLimit.remainingPercent) }
+      if ($stale -and $null -ne $Data) { $tip += "`r`n数据未更新，请刷新后确认。" }
+      $script:ToolTip.SetToolTip($cells.long,$tip)
+      $script:ToolTip.SetToolTip($cells.five,'5 小时窗口剩余额度。' + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt)))
+      $script:ToolTip.SetToolTip($cells.name,([string]$profile.refreshError))
+    }
+  }
+
+  function Update-Status {
+    $problems = @()
+    foreach ($profile in @($script:LastData.profiles)) {
+      if ($null -ne $profile -and (Test-ProfileStale $profile)) { $problems += [string]$profile.label }
+    }
+    $warning = $problems.Count -gt 0 -or -not [string]::IsNullOrEmpty($script:RefreshError)
+    if ($script:RefreshPending) {
+      $text = '正在更新 · 保留上次数据'
+      $compact = '正在更新…'
+    } elseif ($warning) {
+      $text = if ($problems.Count -gt 0) { ($problems -join '、') + '未更新 · 请重试' } else { '刷新失败 · 显示上次数据' }
+      $compact = if ($problems.Count -eq 1) { $problems[0].Replace('账号','') + '未更新' } else { '数据未更新 · 请重试' }
+    } elseif ($null -eq $script:LastData) {
+      $text = '等待首次读取 · 每 5 分钟自动更新'
+      $compact = '等待首次读取'
+    } else {
+      try { $stamp = ([DateTimeOffset]::Parse($script:LastData.fetchedAt)).ToLocalTime().ToString('HH:mm') } catch { $stamp = '--:--' }
+      $text = '更新于 ' + $stamp + ' · 每 5 分钟自动刷新'
+      $compact = '更新于 ' + $stamp
+    }
+    $script:StatusLabel.Text = $text
+    $script:BallStatus.Text = $compact
+    $color = if ($warning) { $script:Theme.Warning } else { $script:Theme.TextMuted }
+    $script:StatusLabel.ForeColor = $color
+    $script:BallStatus.ForeColor = $color
+    $script:ToolTip.SetToolTip($script:StatusLabel, $text + "`r`n" + $script:RefreshError)
+    $script:ToolTip.SetToolTip($script:BallStatus, $text + "`r`n" + $script:RefreshError)
+    foreach ($entry in $script:CardStates) {
+      $stale = (Test-ProfileStale $entry.profile) -or -not [string]::IsNullOrEmpty($script:RefreshError)
+      $loading = $null -eq $script:LastData -and [string]::IsNullOrEmpty($script:RefreshError)
+      $entry.label.Text = if ($loading) { '等待读取…' } elseif ($stale) { '数据未更新' } else { '已连接 · 数据已更新' }
+      if ($loading) { $stale = $false }
+      $entry.label.ForeColor = if ($stale) { $script:Theme.Warning } else { $script:Theme.TextMuted }
+      $script:ToolTip.SetToolTip($entry.label,([string]$entry.profile.refreshError))
+    }
+    foreach ($label in $script:ResetLabels) {
+      $window = $label.Tag.window
+      if ($null -eq $script:LastData -and [string]::IsNullOrEmpty($script:RefreshError)) { $label.Text = '等待读取…' }
+      elseif ($null -eq $window -or $null -eq $window.remainingPercent) { $label.Text = '未提供此额度' }
+      else { $label.Text = Get-ResetText ([string]$window.resetsAt) }
+      $tip = $label.Text
+      if (-not [string]::IsNullOrEmpty($label.Tag.detail)) { $tip = $label.Tag.detail + "`r`n" + $tip }
+      try {
+        if ($window.resetsAt) { $tip += "`r`n" + ([DateTimeOffset]::Parse($window.resetsAt)).ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss zzz') }
+      } catch {}
+      $script:ToolTip.SetToolTip($label,$tip)
+    }
+    Update-BallSummary $script:LastData
+    if ($null -ne $script:NotifyIcon) { $script:NotifyIcon.Text = 'Codex 额度 · ' + $compact }
   }
 
   function Render-Data {
     param($Data)
-    Clear-Content
-    $profiles = @($Data.profiles)
-    $top = 10
-    foreach ($profile in $profiles) {
-      $height = Add-AccountCard -Profile $profile -Top $top
-      $top += $height + 10
-    }
-    if ($profiles.Count -eq 0) {
-      Render-Error 'profiles.json 中没有账号配置。'
-      return
-    }
-    $script:ContentPanel.AutoScrollMinSize = New-Object System.Drawing.Size -ArgumentList 0,($top + 10)
-    $script:StatusLabel.Text = '更新：' + (Get-Date).ToString('HH:mm:ss')
-    Update-BallSummary $Data
-
-    $allRemaining = @()
-    foreach ($profile in $profiles) {
-      $minimum = Get-ProfileMinimum $profile
-      if ($null -ne $minimum) { $allRemaining += [double]$minimum }
-    }
-    if ($allRemaining.Count -gt 0) {
-      $min = [double](($allRemaining | Measure-Object -Minimum).Minimum)
-      $text = 'Codex 额度 · 最低剩余 ' + (Format-Percent $min)
-      if ($text.Length -gt 63) { $text = $text.Substring(0,63) }
-      $script:NotifyIcon.Text = $text
-    } else {
-      $script:NotifyIcon.Text = 'Codex 双账号额度'
-    }
+    $scroll = -$script:ContentPanel.AutoScrollPosition.Y
+    $script:ContentPanel.SuspendLayout()
+    try {
+      Clear-Content
+      foreach ($profile in @($Data.profiles)) { if ($null -ne $profile) { Add-AccountCard $profile } }
+      Update-CardWidths
+    } finally { $script:ContentPanel.ResumeLayout($true) }
+    $script:ContentPanel.AutoScrollPosition = New-Object System.Drawing.Point -ArgumentList 0,$scroll
+    Update-Status
   }
 
   function Show-Loading {
-    Clear-Content
-    $label = New-Object System.Windows.Forms.Label
-    $label.AutoSize = $false
-    $label.Location = New-Object System.Drawing.Point -ArgumentList 16,28
-    $label.Size = New-Object System.Drawing.Size -ArgumentList ([Math]::Max(320,$script:ContentPanel.ClientSize.Width - 32)),90
-    $label.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
-    $label.ForeColor = $script:Theme.TextMuted
-    $label.Font = New-UiFont -FamilyName 'Microsoft YaHei UI' -Size ([single]9) -Style ([System.Drawing.FontStyle]::Regular)
-    $label.Text = "正在后台读取个人账号和工作账号额度…`r`n完成后悬浮球会自动更新。"
-    $script:ContentPanel.Controls.Add($label)
+    $config = Get-Content -LiteralPath (Join-Path $script:Root 'profiles.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $pending = @()
+    foreach ($profile in $config.profiles) {
+      $pending += [pscustomobject]@{ id = $profile.id; label = $profile.label; ok = $true; planType = '等待读取' }
+    }
+    Render-Data ([pscustomobject]@{ profiles = $pending })
+  }
+
+  function Render-Error {
+    param([string]$Message)
+    $script:RefreshError = $Message
+    if ($null -eq $script:LastData) {
+      $config = Get-Content -LiteralPath (Join-Path $script:Root 'profiles.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+      $failed = @()
+      foreach ($profile in $config.profiles) {
+        $failed += [pscustomobject]@{ id = $profile.id; label = $profile.label; ok = $false; error = $Message }
+      }
+      Render-Data ([pscustomobject]@{ profiles = $failed })
+    }
+    Update-Status
   }
 
   function Start-Refresh {
     param([switch]$Silent)
     if ($script:RefreshPending) { return }
     $script:RefreshPending = $true
-    $script:RefreshSilent = $Silent.IsPresent
+    $script:RefreshStarted = [DateTimeOffset]::Now
     $script:RefreshButton.Enabled = $false
-    $script:RefreshButton.Text = '读取中'
-    if ($Silent.IsPresent) {
-      $script:StatusLabel.Text = '后台刷新…'
-    } else {
-      $script:StatusLabel.Text = '正在读取…'
-      if ($null -eq $script:LastData) { Show-Loading }
-    }
-    try { Remove-Item -LiteralPath $script:CachePath -Force -ErrorAction SilentlyContinue } catch {}
-
+    $script:RefreshButton.Text = '更新中'
+    if ($null -eq $script:LastData) { Show-Loading }
+    Update-Status
     try {
+      Remove-Item -LiteralPath $script:CachePath -Force -ErrorAction SilentlyContinue
       $worker = Join-Path $script:Root 'usage-worker.ps1'
       $psi = New-Object System.Diagnostics.ProcessStartInfo
-      $psi.FileName = (Join-Path $PSHOME 'powershell.exe')
+      $psi.FileName = Join-Path $PSHOME 'powershell.exe'
       if (-not (Test-Path -LiteralPath $psi.FileName)) { $psi.FileName = 'powershell.exe' }
       $psi.Arguments = ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -OutputPath "{1}" -LogPath "{2}"' -f $worker,$script:CachePath,$script:WorkerLog)
       $psi.WorkingDirectory = $script:Root
       $psi.UseShellExecute = $false
       $psi.CreateNoWindow = $true
-      $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
       $script:WorkerProcess = New-Object System.Diagnostics.Process
       $script:WorkerProcess.StartInfo = $psi
-      if (-not $script:WorkerProcess.Start()) { throw '无法启动后台额度读取进程。' }
+      if (-not $script:WorkerProcess.Start()) { throw '无法启动后台读取进程。' }
       Write-TrayLog ('Refresh worker PID: ' + $script:WorkerProcess.Id)
     } catch {
+      if ($null -ne $script:WorkerProcess) { $script:WorkerProcess.Dispose(); $script:WorkerProcess = $null }
       $script:RefreshPending = $false
       $script:RefreshButton.Enabled = $true
       $script:RefreshButton.Text = '刷新'
-      if ($script:RefreshSilent -and $null -ne $script:LastData) {
-        $script:StatusLabel.Text = '自动刷新失败 · 保留旧数据'
-        Write-TrayLog ('Silent refresh start error: ' + $_.Exception.Message)
-      } else {
-        Render-Error $_.Exception.Message
-      }
+      Write-TrayLog ('Refresh start error: ' + $_.Exception.Message)
+      Render-Error $_.Exception.Message
     }
   }
 
   function Finish-RefreshIfReady {
-    if (-not $script:RefreshPending) { return }
-    if ($null -eq $script:WorkerProcess) { return }
-    if (-not $script:WorkerProcess.HasExited) { return }
-
-    $exitCode = $script:WorkerProcess.ExitCode
-    try { $script:WorkerProcess.Dispose() } catch {}
+    if (-not $script:RefreshPending -or $null -eq $script:WorkerProcess) { return }
+    if (-not $script:WorkerProcess.HasExited) {
+      if (([DateTimeOffset]::Now - $script:RefreshStarted).TotalSeconds -lt 150) { return }
+      try { $script:WorkerProcess.Kill() } catch {}
+      $script:WorkerProcess.Dispose()
+      $script:WorkerProcess = $null
+      $script:RefreshPending = $false
+      $script:RefreshButton.Enabled = $true
+      $script:RefreshButton.Text = '刷新'
+      Render-Error '读取超时，请重试。'
+      return
+    }
+    $script:WorkerProcess.Dispose()
     $script:WorkerProcess = $null
     $script:RefreshPending = $false
     $script:RefreshButton.Enabled = $true
     $script:RefreshButton.Text = '刷新'
-
     try {
-      if (-not (Test-Path -LiteralPath $script:CachePath)) {
-        throw ('后台读取进程已结束，但没有生成结果文件。退出码：{0}。请查看 logs\worker.log。' -f $exitCode)
-      }
+      if (-not (Test-Path -LiteralPath $script:CachePath)) { throw '后台未返回数据，请重试或查看日志。' }
       $payload = Get-Content -LiteralPath $script:CachePath -Raw -Encoding UTF8 | ConvertFrom-Json
       if (-not $payload.ok) { throw ([string]$payload.error) }
-      $script:LastData = $payload.data
+      if (@($payload.data.profiles).Count -eq 0) { throw '未配置账号，请检查 profiles.json。' }
+      $script:LastData = Merge-DisplayData -Previous $script:LastData -Incoming $payload.data
+      $script:RefreshError = ''
       Render-Data $script:LastData
       Write-TrayLog 'Refresh result rendered.'
     } catch {
-      Write-TrayLog ('Refresh render error: ' + $_.Exception.Message)
-      if ($script:RefreshSilent -and $null -ne $script:LastData) {
-        $script:StatusLabel.Text = '自动刷新失败 · 保留旧数据'
-      } else {
-        Render-Error $_.Exception.Message
-      }
+      Write-TrayLog ('Refresh error: ' + $_.Exception.Message)
+      Render-Error $_.Exception.Message
     }
   }
 
@@ -582,6 +552,7 @@ try {
 
   function Start-Login {
     param([string]$Account)
+    if ($Account -notin @('personal','work')) { return }
     $fileName = if ($Account -eq 'personal') { 'login-personal.bat' } else { 'login-work.bat' }
     $path = Join-Path $script:Root $fileName
     if (-not (Test-Path -LiteralPath $path)) {
@@ -607,98 +578,74 @@ try {
     try { $script:PollTimer.Stop() } catch {}
     try { $script:PeriodicTimer.Stop() } catch {}
     try { $script:InitialTimer.Stop() } catch {}
+    try { $script:StatusTimer.Stop() } catch {}
     try { if ($null -ne $script:WorkerProcess -and -not $script:WorkerProcess.HasExited) { $script:WorkerProcess.Kill() } } catch {}
     try { $script:NotifyIcon.Visible = $false; $script:NotifyIcon.Dispose() } catch {}
     try { $script:Popup.Hide(); $script:Popup.Dispose() } catch {}
     try { $script:Ball.Hide(); $script:Ball.Dispose() } catch {}
     try { if ($null -ne $script:Mutex) { $script:Mutex.ReleaseMutex() | Out-Null; $script:Mutex.Dispose() } } catch {}
+    try { $script:ToolTip.Dispose() } catch {}
+    foreach ($font in $script:Fonts.Values) { try { $font.Dispose() } catch {} }
     try { $script:AppContext.ExitThread() } catch {}
   }
 
   $script:UiSettings = Load-UiSettings
-
   $script:Popup = New-Object System.Windows.Forms.Form
-  $script:Popup.Text = 'Codex 额度 · 个人 + 工作'
+  $script:Popup.Text = 'Codex 额度'
+  $script:Popup.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
+  $script:Popup.Font = New-UiFont
   $script:Popup.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::SizableToolWindow
   $script:Popup.ShowInTaskbar = $false
   $script:Popup.TopMost = [bool]$script:UiSettings.topMost
   $script:Popup.BackColor = $script:Theme.PopupBack
   $script:Popup.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-  $script:Popup.MinimumSize = New-Object System.Drawing.Size -ArgumentList 380,360
-  $panelWidth = [Math]::Max(380,[int]$script:UiSettings.panelWidth)
-  $panelHeight = [Math]::Max(360,[int]$script:UiSettings.panelHeight)
+  $script:Popup.MinimumSize = New-Object System.Drawing.Size -ArgumentList (U 380),(U 360)
+  $panelWidth = [Math]::Max((U 380),[int]$script:UiSettings.panelWidth)
+  $panelHeight = [Math]::Max((U 360),[int]$script:UiSettings.panelHeight)
+  $screenPoint = New-Object System.Drawing.Point -ArgumentList ([int]$script:UiSettings.panelX),([int]$script:UiSettings.panelY)
+  $workingArea = [System.Windows.Forms.Screen]::FromPoint($screenPoint).WorkingArea
+  $panelWidth = [Math]::Min($panelWidth,$workingArea.Width)
+  $panelHeight = [Math]::Min($panelHeight,$workingArea.Height)
   $script:Popup.Size = New-Object System.Drawing.Size -ArgumentList $panelWidth,$panelHeight
-
   if ($null -ne $script:UiSettings.panelX -and $null -ne $script:UiSettings.panelY) {
     $popupPoint = Clamp-Location -X ([int]$script:UiSettings.panelX) -Y ([int]$script:UiSettings.panelY) -Width $panelWidth -Height $panelHeight
-  } else {
-    $popupPoint = Get-DefaultPanelLocation -Width $panelWidth -Height $panelHeight
-  }
+  } else { $popupPoint = Get-DefaultPanelLocation -Width $panelWidth -Height $panelHeight }
   $script:Popup.Location = $popupPoint
 
-  $rootLayout = New-Object System.Windows.Forms.TableLayoutPanel
-  $rootLayout.Dock = [System.Windows.Forms.DockStyle]::Fill
-  $rootLayout.RowCount = 2
-  $rootLayout.ColumnCount = 1
-  $rootLayout.Margin = New-Object System.Windows.Forms.Padding -ArgumentList 0
-  $rootLayout.Padding = New-Object System.Windows.Forms.Padding -ArgumentList 0
-  [void]$rootLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle -ArgumentList ([System.Windows.Forms.SizeType]::Absolute),([single]62)))
+  $rootLayout = New-Grid
+  Add-GridRow $rootLayout 76
+  $rootLayout.RowCount++
   [void]$rootLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]100)))
-  [void]$rootLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]100)))
+  Add-GridRow $rootLayout 36
   $script:Popup.Controls.Add($rootLayout)
-
-  $header = New-Object System.Windows.Forms.Panel
-  $header.Dock = [System.Windows.Forms.DockStyle]::Fill
-  $header.BackColor = $script:Theme.HeaderBack
+  $header = New-Grid -Columns 2
+  $header.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 20),(U 12),(U 20),(U 12)
+  [void]$header.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]100)))
+  [void]$header.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Absolute),([single](U 72))))
+  Add-GridRow $header 30
+  Add-GridRow $header 22
+  $title = New-Label -Text 'Codex 额度' -Size 15 -Bold
+  $subtitle = New-Label -Text '双账号使用概览 · 所有数值均为剩余' -Size 9 -Muted
+  $header.Controls.Add($title,0,0)
+  $header.Controls.Add($subtitle,0,1)
+  $script:RefreshButton = New-Button '刷新'
+  $script:RefreshButton.Add_Click({ Start-Refresh })
+  $header.Controls.Add($script:RefreshButton,1,0)
   $rootLayout.Controls.Add($header,0,0)
 
-  $title = New-Object System.Windows.Forms.Label
-  $title.Text = 'Codex Dual Usage  ·  FLOAT'
-  $title.AutoSize = $true
-  $title.Location = New-Object System.Drawing.Point -ArgumentList 15,10
-  $title.Font = New-UiFont -FamilyName 'Segoe UI Semibold' -Size ([single]11.4) -Style ([System.Drawing.FontStyle]::Regular)
-  $title.ForeColor = $script:Theme.TextPrimary
-  $header.Controls.Add($title)
-
-  $script:StatusLabel = New-Object System.Windows.Forms.Label
-  $script:StatusLabel.Text = '悬浮球已启动 · 等待首次读取'
-  $script:StatusLabel.AutoSize = $true
-  $script:StatusLabel.Location = New-Object System.Drawing.Point -ArgumentList 16,38
-  $script:StatusLabel.ForeColor = $script:Theme.TextMuted
-  $script:StatusLabel.Font = New-UiFont -FamilyName 'Segoe UI' -Size ([single]8.1) -Style ([System.Drawing.FontStyle]::Regular)
-  $header.Controls.Add($script:StatusLabel)
-
-  $script:RefreshButton = New-Object System.Windows.Forms.Button
-  $script:RefreshButton.Text = '刷新'
-  $script:RefreshButton.Size = New-Object System.Drawing.Size -ArgumentList 72,30
-  $script:RefreshButton.Location = New-Object System.Drawing.Point -ArgumentList ($header.ClientSize.Width - 88),16
-  $script:RefreshButton.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
-  $script:RefreshButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-  $script:RefreshButton.BackColor = $script:Theme.ButtonBack
-  $script:RefreshButton.ForeColor = $script:Theme.TextPrimary
-  $script:RefreshButton.FlatAppearance.BorderColor = $script:Theme.ButtonBorder
-  $script:RefreshButton.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(28,56,84)
-  $script:RefreshButton.Add_Click({ Start-Refresh })
-  $header.Controls.Add($script:RefreshButton)
-
-  $script:ContentPanel = New-Object System.Windows.Forms.Panel
+  $script:ContentPanel = New-Object System.Windows.Forms.FlowLayoutPanel
   $script:ContentPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
+  $script:ContentPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+  $script:ContentPanel.WrapContents = $false
   $script:ContentPanel.AutoScroll = $true
-  $script:ContentPanel.BackColor = $script:Theme.PopupBack
+  $script:ContentPanel.Margin = New-Object System.Windows.Forms.Padding -ArgumentList 0
+  $script:ContentPanel.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 16),0,(U 16),0
+  $script:ContentPanel.Add_SizeChanged({ Update-CardWidths })
   $rootLayout.Controls.Add($script:ContentPanel,0,1)
+  $script:StatusLabel = New-Label -Size 9 -Muted
+  $script:StatusLabel.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 20),0,(U 20),0
+  $rootLayout.Controls.Add($script:StatusLabel,0,2)
 
-  $script:Popup.Add_LocationChanged({
-    if (-not $script:Exiting) {
-      $script:UiSettings.panelX = $script:Popup.Left
-      $script:UiSettings.panelY = $script:Popup.Top
-    }
-  })
-  $script:Popup.Add_Resize({
-    if (-not $script:Exiting -and $script:Popup.WindowState -eq [System.Windows.Forms.FormWindowState]::Normal) {
-      $script:UiSettings.panelWidth = $script:Popup.Width
-      $script:UiSettings.panelHeight = $script:Popup.Height
-    }
-  })
   $script:Popup.Add_ResizeEnd({ Save-UiSettings })
   $script:Popup.Add_FormClosing({
     param($sender,$eventArgs)
@@ -709,76 +656,58 @@ try {
     }
   })
 
-  $script:Ball = New-Object System.Windows.Forms.Form
-  $script:Ball.Text = 'Codex Usage'
+  $script:Ball = New-Object CodexUsage.FloatingForm
+  $script:Ball.Text = 'Codex 额度悬浮面板'
+  $script:Ball.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
+  $script:Ball.Radius = U 16
   $script:Ball.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
   $script:Ball.ShowInTaskbar = $false
   $script:Ball.TopMost = [bool]$script:UiSettings.topMost
   $script:Ball.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-  $script:Ball.Size = New-Object System.Drawing.Size -ArgumentList 92,92
+  $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (U 244),(U 142)
   $script:Ball.BackColor = $script:Theme.BallBack
-  $script:Ball.Opacity = 0.96
-
+  $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 14),(U 10),(U 14),(U 10)
   if ($null -ne $script:UiSettings.ballX -and $null -ne $script:UiSettings.ballY) {
-    $ballPoint = Clamp-Location -X ([int]$script:UiSettings.ballX) -Y ([int]$script:UiSettings.ballY) -Width 92 -Height 92
-  } else {
-    $ballPoint = Get-DefaultBallLocation
-  }
+    $ballPoint = Clamp-Location -X ([int]$script:UiSettings.ballX) -Y ([int]$script:UiSettings.ballY) -Width $script:Ball.Width -Height $script:Ball.Height
+  } else { $ballPoint = Get-DefaultBallLocation }
   $script:Ball.Location = $ballPoint
-
-  $setBallRegion = {
-    try {
-      $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-      $path.AddEllipse(0,0,($script:Ball.ClientSize.Width - 1),($script:Ball.ClientSize.Height - 1))
-      $region = New-Object System.Drawing.Region($path)
-      $script:Ball.Region = $region
-      $path.Dispose()
-    } catch {}
+  $ballGrid = New-Grid -Columns 3
+  [void]$ballGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Absolute),([single](U 56))))
+  foreach ($unused in 1..2) {
+    [void]$ballGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]50)))
   }
-  & $setBallRegion
-  $script:Ball.Add_Resize($setBallRegion)
-  $script:Ball.Add_Paint({
-    param($sender,$eventArgs)
-    try {
-      $eventArgs.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-      $pen = New-Object System.Drawing.Pen -ArgumentList $script:BallAccent,([single]3.0)
-      $eventArgs.Graphics.DrawEllipse($pen,2,2,($sender.ClientSize.Width - 5),($sender.ClientSize.Height - 5))
-      $pen.Dispose()
-    } catch {}
-  })
+  foreach ($height in @(24,34,34,30)) { Add-GridRow $ballGrid $height }
+  $column = 0
+  foreach ($text in @('剩余','5小时','长周期')) {
+    $caption = New-Label -Text $text -Size 9 -Muted
+    if ($column -gt 0) { $caption.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight }
+    $ballGrid.Controls.Add($caption,$column,0)
+    $column++
+  }
+  $row = 1
+  foreach ($id in @('personal','work')) {
+    $name = New-Label -Text $(if ($id -eq 'personal') { '个人' } else { '工作' }) -Size 10 -Muted
+    $five = New-Label -Text '—' -Size 15 -Bold
+    $long = New-Label -Text '—' -Size 15 -Bold
+    $five.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+    $long.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+    $ballGrid.Controls.Add($name,0,$row)
+    $ballGrid.Controls.Add($five,1,$row)
+    $ballGrid.Controls.Add($long,2,$row)
+    $script:BallCells[$id] = @{ name = $name; five = $five; long = $long }
+    $row++
+  }
+  $script:BallStatus = New-Label -Text '等待首次读取' -Size 9 -Muted
+  $ballGrid.Controls.Add($script:BallStatus,0,3)
+  $ballGrid.SetColumnSpan($script:BallStatus,3)
+  $script:Ball.Controls.Add($ballGrid)
 
-  $script:BallPersonalLabel = New-Object System.Windows.Forms.Label
-  $script:BallPersonalLabel.Text = 'P --'
-  $script:BallPersonalLabel.AutoSize = $false
-  $script:BallPersonalLabel.Size = New-Object System.Drawing.Size -ArgumentList 78,22
-  $script:BallPersonalLabel.Location = New-Object System.Drawing.Point -ArgumentList 7,17
-  $script:BallPersonalLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-  $script:BallPersonalLabel.ForeColor = $script:Theme.TextPrimary
-  $script:BallPersonalLabel.BackColor = [System.Drawing.Color]::Transparent
-  $script:BallPersonalLabel.Font = New-UiFont -FamilyName 'Consolas' -Size ([single]10) -Style ([System.Drawing.FontStyle]::Bold)
-  $script:Ball.Controls.Add($script:BallPersonalLabel)
-
-  $script:BallWorkLabel = New-Object System.Windows.Forms.Label
-  $script:BallWorkLabel.Text = 'W --'
-  $script:BallWorkLabel.AutoSize = $false
-  $script:BallWorkLabel.Size = New-Object System.Drawing.Size -ArgumentList 78,22
-  $script:BallWorkLabel.Location = New-Object System.Drawing.Point -ArgumentList 7,39
-  $script:BallWorkLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-  $script:BallWorkLabel.ForeColor = $script:Theme.CyanSoft
-  $script:BallWorkLabel.BackColor = [System.Drawing.Color]::Transparent
-  $script:BallWorkLabel.Font = New-UiFont -FamilyName 'Consolas' -Size ([single]10) -Style ([System.Drawing.FontStyle]::Bold)
-  $script:Ball.Controls.Add($script:BallWorkLabel)
-
-  $ballCaption = New-Object System.Windows.Forms.Label
-  $ballCaption.Text = 'CODEX'
-  $ballCaption.AutoSize = $false
-  $ballCaption.Size = New-Object System.Drawing.Size -ArgumentList 70,14
-  $ballCaption.Location = New-Object System.Drawing.Point -ArgumentList 11,63
-  $ballCaption.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-  $ballCaption.ForeColor = $script:Theme.TextMuted
-  $ballCaption.BackColor = [System.Drawing.Color]::Transparent
-  $ballCaption.Font = New-UiFont -FamilyName 'Segoe UI' -Size ([single]6.8) -Style ([System.Drawing.FontStyle]::Regular)
-  $script:Ball.Controls.Add($ballCaption)
+  function Get-ControlTree {
+    param($Control)
+    $Control
+    foreach ($child in $Control.Controls) { Get-ControlTree $child }
+  }
+  $script:BallControls = @(Get-ControlTree $script:Ball)
 
   $ballMouseDownHandler = {
     param($sender,$eventArgs)
@@ -794,7 +723,7 @@ try {
       $cursor = [System.Windows.Forms.Cursor]::Position
       $dx = $cursor.X - $script:BallMouseDown.X
       $dy = $cursor.Y - $script:BallMouseDown.Y
-      if ([Math]::Abs($dx) + [Math]::Abs($dy) -gt 3) { $script:BallDragged = $true }
+      if ([Math]::Abs($dx) + [Math]::Abs($dy) -gt (U 4)) { $script:BallDragged = $true }
       if ($script:BallDragged) {
         $script:Ball.Location = New-Object System.Drawing.Point -ArgumentList ($script:BallOrigin.X + $dx),($script:BallOrigin.Y + $dy)
       }
@@ -816,7 +745,7 @@ try {
     }
   }
 
-  foreach ($control in @($script:Ball,$script:BallPersonalLabel,$script:BallWorkLabel,$ballCaption)) {
+  foreach ($control in $script:BallControls) {
     $control.Add_MouseDown($ballMouseDownHandler)
     $control.Add_MouseMove($ballMouseMoveHandler)
     $control.Add_MouseUp($ballMouseUpHandler)
@@ -825,7 +754,7 @@ try {
   $menu = New-Object System.Windows.Forms.ContextMenuStrip
   $itemToggle = $menu.Items.Add('展开 / 收起额度面板')
   $itemRefresh = $menu.Items.Add('立即刷新')
-  $itemBallVisible = $menu.Items.Add('显示悬浮球')
+  $itemBallVisible = $menu.Items.Add('显示悬浮面板')
   $itemBallVisible.CheckOnClick = $true
   $itemBallVisible.Checked = [bool]$script:UiSettings.ballVisible
   $itemTopMost = $menu.Items.Add('始终置顶')
@@ -861,7 +790,7 @@ try {
   $itemLogs.Add_Click({ Start-Process explorer.exe -ArgumentList $script:LogDir | Out-Null })
   $itemExit.Add_Click({ Exit-App })
 
-  foreach ($control in @($script:Ball,$script:BallPersonalLabel,$script:BallWorkLabel,$ballCaption)) {
+  foreach ($control in $script:BallControls) {
     $control.ContextMenuStrip = $menu
   }
 
@@ -873,9 +802,21 @@ try {
     param($sender,$eventArgs)
     if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) { Toggle-Popup }
   })
-  $script:NotifyIcon.Visible = $true
+  $script:NotifyIcon.Visible = -not $SmokeTest
 
-  if ([bool]$script:UiSettings.ballVisible) { $script:Ball.Show() }
+  if ([bool]$script:UiSettings.ballVisible -and -not $SmokeTest) { $script:Ball.Show() }
+
+  if ($SmokeTest) {
+    . (Join-Path $script:Root 'tests\ui-smoke.ps1')
+    Exit-App
+    return
+  }
+
+  Show-Loading
+  $script:StatusTimer = New-Object System.Windows.Forms.Timer
+  $script:StatusTimer.Interval = 30000
+  $script:StatusTimer.Add_Tick({ Update-Status })
+  $script:StatusTimer.Start()
 
   $script:PollTimer = New-Object System.Windows.Forms.Timer
   $script:PollTimer.Interval = 350
