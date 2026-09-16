@@ -2,6 +2,7 @@
 logs/
 *.log
 usage-result.json
+ui-settings.json
 
 # Local archives / temp files
 *.zip
