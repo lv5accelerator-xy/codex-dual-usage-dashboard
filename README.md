@@ -2,7 +2,7 @@
 
 Windows tray dashboard for viewing ChatGPT/Codex usage limits for two separate accounts (Personal + Work).
 
-Current version: **v0.3.5**
+Current version: **v0.3.6**
 
 ## What it shows
 
@@ -13,21 +13,28 @@ Current version: **v0.3.5**
 - Independent Personal / Work Codex profiles
 - Windows system tray access and manual refresh
 
+## v0.3.6
+
+- Fixed the Windows PowerShell 5.1 `Path.GetFullPath` startup error introduced in v0.3.5.
+- Removed use of `$MyInvocation.MyCommand.Path` from inside the source-normalization function.
+- Replaced `Start-Process` with `System.Diagnostics.ProcessStartInfo` for tray startup.
+- Added a syntax check for `tray.ps1` before the tray process launches.
+- Preserved automatic UTF-8 BOM normalization for GitHub ZIP downloads.
+
 ## v0.3.5
 
-- Hardened startup for GitHub ZIP downloads
-- `start.bat` no longer depends on Windows Script Host / VBS for normal startup
-- Added `launcher.ps1` with startup health checks and persistent startup logs
-- GitHub-downloaded PowerShell files are normalized locally for Windows PowerShell 5.1 before launch
-- Early startup failures now write `logs/startup-error.log` instead of silently disappearing
+- Hardened startup for GitHub ZIP downloads.
+- `start.bat` no longer depends on Windows Script Host / VBS for normal startup.
+- Added `launcher.ps1` with startup health checks and persistent startup logs.
+- GitHub-downloaded PowerShell files are normalized locally for Windows PowerShell 5.1 before launch.
+- Early startup failures write `logs/startup-error.log` instead of silently disappearing.
 
 ## v0.3.4
 
-- Dark technology-style UI
-- Larger adaptive popup window
-- Automatically returns the quota panel to the top when opened/refreshed
-- Improved quota card hierarchy and progress bars
-- Keeps all reliability fixes from v0.3.3
+- Dark technology-style UI.
+- Larger adaptive popup window.
+- Automatically returns the quota panel to the top when opened/refreshed.
+- Improved quota card hierarchy and progress bars.
 
 ## Requirements
 
@@ -99,4 +106,4 @@ The repository does not contain ChatGPT/Codex login credentials. Authentication 
 
 ## GitHub ZIP note
 
-If you download the repository using **Code → Download ZIP**, extract the ZIP completely before running `start.bat`. v0.3.5 includes a dedicated startup launcher that records early failures instead of silently exiting.
+If you download the repository using **Code → Download ZIP**, extract the ZIP completely before running `start.bat`. v0.3.6 includes a Windows PowerShell 5.1-compatible startup launcher and persistent startup diagnostics.
