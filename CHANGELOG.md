@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.6 - 2026-09-16
+
+- Fixed `Path.GetFullPath` startup failure in `launcher.ps1` on Windows PowerShell 5.1.
+- Removed the invalid use of `$MyInvocation.MyCommand.Path` from inside the normalization function.
+- Replaced `Start-Process` startup with `System.Diagnostics.ProcessStartInfo`.
+- Added a PowerShell syntax check for `tray.ps1` before launch.
+- Kept automatic UTF-8 BOM normalization for GitHub ZIP downloads.
+
 ## 0.3.5 - 2026-09-16
 
 - Fixed silent startup exits after downloading the repository from GitHub.
