@@ -2,7 +2,7 @@
 
 Windows tray dashboard for viewing ChatGPT/Codex usage limits for two separate accounts (Personal + Work).
 
-Current version: **v0.3.6**
+Current version: **v0.3.7**
 
 ## What it shows
 
@@ -12,6 +12,14 @@ Current version: **v0.3.6**
 - Time remaining until reset
 - Independent Personal / Work Codex profiles
 - Windows system tray access and manual refresh
+- Automatic background refresh every 5 minutes
+
+## v0.3.7
+
+- Fixed the Personal account card being rendered underneath the fixed header.
+- The quota content area now starts below the 58px header instead of using `Dock=Fill`.
+- Increased minimum popup height so the first card is fully visible.
+- Kept the existing 5-minute automatic refresh interval.
 
 ## v0.3.6
 
@@ -106,4 +114,4 @@ The repository does not contain ChatGPT/Codex login credentials. Authentication 
 
 ## GitHub ZIP note
 
-If you download the repository using **Code → Download ZIP**, extract the ZIP completely before running `start.bat`. v0.3.6 includes a Windows PowerShell 5.1-compatible startup launcher and persistent startup diagnostics.
+If you download the repository using **Code → Download ZIP**, extract the ZIP completely before running `start.bat`. v0.3.7 includes the header-layout compatibility fix plus the existing Windows PowerShell 5.1 startup diagnostics.
