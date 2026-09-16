@@ -847,6 +847,6 @@ try {
   try {
     if ($null -ne $script:Mutex) { $script:Mutex.ReleaseMutex() | Out-Null; $script:Mutex.Dispose() }
   } catch {}
-  Show-FatalError $_.Exception.ToString()
+  Show-FatalError ($_.Exception.ToString() + "`r`n" + $_.ScriptStackTrace)
   exit 1
 }

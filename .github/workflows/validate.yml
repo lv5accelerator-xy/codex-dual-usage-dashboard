@@ -18,7 +18,9 @@ jobs:
           Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
             $tokens = $null
             $parseErrors = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors)
+            # Match launcher.ps1: legacy sources are UTF-8, even before BOM normalization.
+            $source = [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::UTF8)
+            [void][System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$parseErrors)
             if ($parseErrors.Count) { throw ($_.FullName + ': ' + ($parseErrors.Message -join '; ')) }
           }
       - name: Check quota and stale-data behavior
