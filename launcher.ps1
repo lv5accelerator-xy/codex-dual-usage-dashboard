@@ -1,3 +1,5 @@
+param([switch]$DebugMode)
+
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -33,51 +35,10 @@ function Show-LaunchError {
 
 function Normalize-PowerShellFiles {
   $utf8Bom = New-Object System.Text.UTF8Encoding($true)
-
   foreach ($file in Get-ChildItem -LiteralPath $root -Filter '*.ps1' -File) {
     try {
       if ($file.Name -ieq 'launcher.ps1') { continue }
-
       $text = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
-
-      if ($file.Name -ieq 'tray.ps1') {
-        $text = $text.Replace('===== v0.3.4 tray starting =====','===== v0.3.7 tray starting =====')
-        $text = $text.Replace('===== v0.3.5 tray starting =====','===== v0.3.7 tray starting =====')
-        $text = $text.Replace('===== v0.3.6 tray starting =====','===== v0.3.7 tray starting =====')
-        $text = $text.Replace('CodexDualUsageTrayV034','CodexDualUsageTray')
-
-        # v0.3.7 layout fix: the scrollable quota area must start below the
-        # 58px header. Dock=Fill let the first account card render under the
-        # header, which is why the upper half of the Personal card was hidden.
-        if ($text -notmatch 'LayoutFixV037') {
-          $layoutPattern = '(?ms)^  \$script:ContentPanel = New-Object System\.Windows\.Forms\.Panel\r?\n  \$script:ContentPanel\.Dock = \[System\.Windows\.Forms\.DockStyle\]::Fill\r?\n  \$script:ContentPanel\.AutoScroll = \$true\r?\n  \$script:ContentPanel\.BackColor = \$script:Theme\.PopupBack\r?\n  \$script:Popup\.Controls\.Add\(\$script:ContentPanel\)\r?\n  \$header\.BringToFront\(\)'
-          $layoutReplacement = @'
-  # LayoutFixV037: keep quota cards physically below the fixed header.
-  $script:ContentPanel = New-Object System.Windows.Forms.Panel
-  $script:ContentPanel.AutoScroll = $true
-  $script:ContentPanel.BackColor = $script:Theme.PopupBack
-  $script:ContentPanel.Location = New-Object System.Drawing.Point -ArgumentList 0,58
-  $script:ContentPanel.Size = New-Object System.Drawing.Size -ArgumentList 408,562
-  $script:ContentPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
-  $script:Popup.Controls.Add($script:ContentPanel)
-  $header.BringToFront()
-'@
-          $patched = [regex]::Replace($text, $layoutPattern, $layoutReplacement)
-          if ($patched -eq $text) {
-            Write-StartupLog 'layout patch warning: target ContentPanel block was not found.'
-          } else {
-            $text = $patched
-            Write-StartupLog 'v0.3.7 ContentPanel layout patch applied.'
-          }
-        }
-
-        # Leave enough client height for the header plus both account cards.
-        $text = $text.Replace(
-          '$totalHeight = [Math]::Max(460, [Math]::Min(760, $top + 74))',
-          '$totalHeight = [Math]::Max(520, [Math]::Min(760, $top + 100))'
-        )
-      }
-
       [System.IO.File]::WriteAllText($file.FullName, $text, $utf8Bom)
     } catch {
       Write-StartupLog ('normalize warning for ' + $file.Name + ': ' + $_.Exception.Message)
@@ -87,11 +48,9 @@ function Normalize-PowerShellFiles {
 
 function Test-TraySyntax {
   param([string]$Path)
-
   $tokens = $null
   $parseErrors = $null
   [void][System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$parseErrors)
-
   if ($null -ne $parseErrors -and $parseErrors.Count -gt 0) {
     $messages = @($parseErrors | ForEach-Object { $_.Message })
     throw ('tray.ps1 syntax check failed: ' + ($messages -join ' | '))
@@ -99,10 +58,9 @@ function Test-TraySyntax {
 }
 
 try {
-  Write-StartupLog '===== launcher v0.3.7 starting ====='
-
+  Write-StartupLog '===== launcher v0.3.8 starting ====='
   Normalize-PowerShellFiles
-  Write-StartupLog 'PowerShell source encoding and compatibility fixes applied.'
+  Write-StartupLog 'PowerShell source encoding normalized.'
 
   $tray = Join-Path $root 'tray.ps1'
   if (-not (Test-Path -LiteralPath $tray)) {
@@ -122,31 +80,31 @@ try {
   $psi.Arguments = '-NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File "' + $tray + '"'
   $psi.WorkingDirectory = $root
   $psi.UseShellExecute = $false
-  $psi.CreateNoWindow = $true
-  $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+  if ($DebugMode) {
+    $psi.CreateNoWindow = $false
+    $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+  } else {
+    $psi.CreateNoWindow = $true
+    $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+  }
 
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $psi
-
-  if (-not $process.Start()) {
-    throw 'Failed to start tray process.'
-  }
+  if (-not $process.Start()) { throw 'Failed to start tray process.' }
 
   Write-StartupLog ('tray process created. PID=' + $process.Id)
   Start-Sleep -Milliseconds 1800
 
   if ($process.HasExited) {
     $detail = ('Tray exited during startup. Exit code: {0}' -f $process.ExitCode)
-
     if (Test-Path -LiteralPath $trayLog) {
       try {
-        $tail = @(Get-Content -LiteralPath $trayLog -Tail 12 -ErrorAction SilentlyContinue)
+        $tail = @(Get-Content -LiteralPath $trayLog -Tail 16 -ErrorAction SilentlyContinue)
         if ($tail.Count -gt 0) {
           $detail += "`r`n`r`nLast tray log lines:`r`n" + ($tail -join "`r`n")
         }
       } catch {}
     }
-
     $detail += "`r`n`r`nSee logs\startup.log and logs\tray.log."
     throw $detail
   }
