@@ -2,7 +2,7 @@
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
-title Codex Dual Usage v0.3.5 - Debug
+title Codex Dual Usage v0.3.6 - Debug
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File "%~dp0tray.ps1"
 echo.
 echo =============================================
