@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.5 - 2026-09-16
+
+- Fixed silent startup exits after downloading the repository from GitHub.
+- Removed VBS/Windows Script Host from the primary startup path.
+- Added `launcher.ps1` startup watchdog and `startup-error.log` diagnostics.
+- Normalized GitHub-downloaded PowerShell source files locally for Windows PowerShell 5.1 before launch.
+- Updated `start-debug.bat` and version metadata.
+
 ## 0.3.4
 - Added dark technology-style dashboard UI.
 - Fixed initial scroll position so the Personal card is fully visible.
