@@ -1,0 +1,20 @@
+# Runtime data
+logs/
+*.log
+usage-result.json
+
+# Local archives / temp files
+*.zip
+*.tmp
+*.bak
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Never commit local Codex authentication/profile directories
+.codex/
+.codex-personal/
+.codex-work/
