@@ -358,9 +358,22 @@ try {
   }
 
   function Update-CardWidths {
-    if ($null -eq $script:ContentPanel) { return }
-    $width = [Math]::Max((U 300), $script:ContentPanel.ClientSize.Width - $script:ContentPanel.Padding.Horizontal - [System.Windows.Forms.SystemInformation]::VerticalScrollBarWidth)
-    foreach ($card in $script:ContentPanel.Controls) { $card.Width = $width }
+    if ($null -eq $script:ContentPanel -or $script:LayingOutCards) { return }
+    $script:LayingOutCards = $true
+    try {
+      # Stack actual card heights. FlowLayoutPanel can retain a horizontal scroll
+      # extent after a wide-to-narrow resize, even when every card fits.
+      $panel = $script:ContentPanel
+      $width = [Math]::Max(1, $panel.ClientSize.Width - $panel.Padding.Horizontal - [System.Windows.Forms.SystemInformation]::VerticalScrollBarWidth)
+      $top = $panel.Padding.Top
+      $offset = $panel.AutoScrollPosition.Y
+      foreach ($card in $panel.Controls) {
+        $card.Width = $width
+        $card.Location = New-Object System.Drawing.Point -ArgumentList $panel.Padding.Left,($top + $offset)
+        $top += $card.Height + $card.Margin.Bottom
+      }
+      $panel.AutoScrollMinSize = New-Object System.Drawing.Size -ArgumentList 0,$top
+    } finally { $script:LayingOutCards = $false }
   }
 
   function Update-BallSummary {
@@ -633,10 +646,8 @@ try {
   $header.Controls.Add($script:RefreshButton,1,0)
   $rootLayout.Controls.Add($header,0,0)
 
-  $script:ContentPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+  $script:ContentPanel = New-Object System.Windows.Forms.Panel
   $script:ContentPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
-  $script:ContentPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
-  $script:ContentPanel.WrapContents = $false
   $script:ContentPanel.AutoScroll = $true
   $script:ContentPanel.Margin = New-Object System.Windows.Forms.Padding -ArgumentList 0
   $script:ContentPanel.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 16),0,(U 16),0

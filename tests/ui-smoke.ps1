@@ -35,6 +35,7 @@ foreach ($width in @(380,440,620)) {
   $script:Popup.Width = U $width
   $script:Popup.Height = U 840
   [System.Windows.Forms.Application]::DoEvents()
+  Assert-Ui (-not $script:ContentPanel.HorizontalScroll.Visible) 'Resizing must never introduce horizontal scrolling.'
   foreach ($card in $script:ContentPanel.Controls) {
     Assert-Ui ($card.Width -le $script:ContentPanel.ClientSize.Width) 'Cards must fit resized content.'
     $grid = $card.Controls[0]
@@ -52,7 +53,8 @@ $outputDir = Join-Path $script:Root 'artifacts'
 foreach ($entry in @(@{ form = $script:Popup; name = 'detail.png' },@{ form = $script:Ball; name = 'floating.png' })) {
   $bitmap = New-Object System.Drawing.Bitmap -ArgumentList $entry.form.Width,$entry.form.Height
   try {
-    $entry.form.DrawToBitmap($bitmap,$entry.form.ClientRectangle)
+    $bounds = New-Object System.Drawing.Rectangle -ArgumentList 0,0,$entry.form.Width,$entry.form.Height
+    $entry.form.DrawToBitmap($bitmap,$bounds)
     $bitmap.Save((Join-Path $outputDir $entry.name),[System.Drawing.Imaging.ImageFormat]::Png)
   } finally { $bitmap.Dispose() }
 }
