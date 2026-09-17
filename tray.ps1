@@ -75,7 +75,7 @@ function Show-FatalError {
 }
 
 try {
-  Write-TrayLog '===== v0.6.0 tray starting ====='
+  Write-TrayLog '===== v0.6.1 tray starting ====='
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
   if (-not ('CodexUsage.Surface' -as [type])) {

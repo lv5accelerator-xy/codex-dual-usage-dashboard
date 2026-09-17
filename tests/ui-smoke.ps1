@@ -72,7 +72,38 @@ $setupBitmap = New-Object System.Drawing.Bitmap -ArgumentList $setupPreview.Widt
 try {
   $setupPreview.DrawToBitmap($setupBitmap,(New-Object System.Drawing.Rectangle -ArgumentList 0,0,$setupPreview.Width,$setupPreview.Height))
   $setupBitmap.Save((Join-Path $outputDir 'account-setup.png'),[System.Drawing.Imaging.ImageFormat]::Png)
-} finally { $setupBitmap.Dispose(); $setupPreview.Close(); $setupPreview.Dispose() }
+} finally { $setupBitmap.Dispose() }
+# Exercise the real Save button against isolated files, never the user's settings.
+$originalDataRoot = $script:DataRoot
+$originalProfiles = $script:ProfileConfig
+$saveFixture = Join-Path $outputDir ('账号保存 test ' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $saveFixture | Out-Null
+try {
+  $script:DataRoot = $saveFixture
+  $profilePath = Join-Path $saveFixture 'profiles.json'
+  Save-ProfilePreferences $originalProfiles $profilePath
+  $script:SetupRows[0].name.Text = '开发账号'
+  $script:SetupRows[1].enabled.Checked = $false
+  $setupPreview.Controls['saveAccounts'].PerformClick()
+  $saved = Get-Content -LiteralPath $profilePath -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-Ui ($saved.profiles[0].label -eq '开发账号') 'Real Save button persists custom names.'
+  Assert-Ui (-not $saved.profiles[1].enabled) 'Real Save button persists disabled account.'
+  Assert-Ui ($saved.profiles[0].codexHome -eq $originalProfiles.profiles[0].codexHome) 'Saving preserves the account home.'
+  $backup = Get-Content -LiteralPath ($profilePath + '.bak') -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-Ui ($backup.profiles[0].label -eq '个人') 'Atomic save preserves previous settings in backup.'
+  $saved.profiles[0].label = '第二次保存'
+  Save-ProfilePreferences $saved $profilePath
+  $reloaded = Get-Content -LiteralPath $profilePath -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-Ui ($reloaded.profiles[0].label -eq '第二次保存') 'Repeated save succeeds with an existing backup.'
+  Assert-Ui (@(Get-ChildItem -LiteralPath $saveFixture -Filter '*.tmp').Count -eq 0) 'Successful saves leave no temporary files.'
+} finally {
+  $script:DataRoot = $originalDataRoot
+  $script:ProfileConfig = $originalProfiles
+  $setupPreview.Close(); $setupPreview.Dispose()
+  Apply-ProfileLayout
+  Render-Data $script:LastData
+  Remove-Item -LiteralPath $saveFixture -Recurse -Force
+}
 # DPI and geometry contracts without requiring multiple physical monitors.
 $dpiFixture = New-Object CodexUsage.DpiForm
 $dpiFixture.ClientSize = New-Object System.Drawing.Size -ArgumentList 200,100

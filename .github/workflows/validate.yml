@@ -91,6 +91,8 @@ jobs:
           cat > release-notes.md <<'NOTES'
           Windows 10/11 desktop client. Download **CodexUsage.exe** and double-click it. Confirm “安装并启动” on first launch. Installation is per-user and creates shortcuts; no administrator access is needed. Windows Settings → Apps now includes an uninstall entry that preserves settings and account data.
 
+          v0.6.1 修复账号设置保存时“路径的形式不合法”的错误，保留账号目录并备份上一次设置。
+
           后续版本在后台自动检查和下载，右键选择“客户端更新 → 重启并更新”生效，也可退出后自动安装。额度每分钟刷新一次；保留紧凑模式、透明度设置、贴边吸附与低额度通知。
 
           小窗同时显示 5h / 长周期剩余，分别着色；5h 用尽时显示恢复倒计时，悬停查看本机时区的准确时刻。支持单账号、自定义名称和首次使用引导。右键可开启开机启动与全屏隐藏。新增跨屏 DPI 处理、更新下载进度和可重试的错误说明。

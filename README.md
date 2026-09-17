@@ -2,7 +2,7 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.6.0**
+Current version: **v0.6.1**
 
 ## Windows EXE client (recommended)
 
@@ -41,6 +41,10 @@ Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File desktop/build.ps1` 
 GitHub Actions validates the source UI, builds the EXE, runs the packaged UI plus migration/integrity tests, and publishes a GitHub Release when `VERSION` is new. Published version assets are immutable: increment `VERSION` for each release. No developer API key or signing secret is required for the current unsigned build.
 
 [Icon design and source assets](assets/README.md)
+
+## v0.6.1: account settings save fix
+
+Fixes the Windows PowerShell path error when saving account names or enabled accounts. Atomic replacement now uses an explicit backup path. The Windows UI test clicks the actual Save button, reloads the saved JSON, verifies account paths are preserved, and exercises repeated saves.
 
 ## v0.6.0: accounts, recovery and desktop integration
 

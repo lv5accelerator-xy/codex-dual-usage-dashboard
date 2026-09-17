@@ -13,6 +13,24 @@ function Load-ProfilePreferences {
   $script:AutoHidden = $false
   $script:ProfileCli = $null
 }
+function Save-ProfilePreferences {
+  param([Parameter(Mandatory=$true)]$Config,[Parameter(Mandatory=$true)][string]$Path)
+  $fullPath = [System.IO.Path]::GetFullPath($Path)
+  $temporary = $fullPath + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+  try {
+    $json = $Config | ConvertTo-Json -Depth 10
+    [System.IO.File]::WriteAllText($temporary,$json,(New-Object System.Text.UTF8Encoding($false)))
+    if ([System.IO.File]::Exists($fullPath)) {
+      # PowerShell 5.1 coerces a null string argument to an empty path.
+      # A real backup path avoids that binding issue and retains the last settings.
+      [System.IO.File]::Replace($temporary,$fullPath,($fullPath + '.bak'))
+    } else {
+      [System.IO.File]::Move($temporary,$fullPath)
+    }
+  } finally {
+    if ([System.IO.File]::Exists($temporary)) { [System.IO.File]::Delete($temporary) }
+  }
+}
 function Get-ActiveIds {
   return @($script:ProfileConfig.profiles | Where-Object { (Get-ProfileEnabled $_) -and $_.id -in @('personal','work') } | ForEach-Object { [string]$_.id })
 }
@@ -126,6 +144,7 @@ function Show-AccountSettings {
   $detect.Dock='None'; $detect.SetBounds((U 20),(U 298),(U 120),(U 36))
   $script:SetupDialog.Controls.Add($detect)
   $apply = New-Button '保存'
+  $apply.Name = 'saveAccounts'
   $apply.Dock='None'; $apply.SetBounds((U 358),(U 298),(U 120),(U 36))
   $script:SetupDialog.Controls.Add($apply)
   $script:RefreshSetup = {
@@ -155,17 +174,16 @@ function Show-AccountSettings {
         $profile | Add-Member -NotePropertyName enabled -NotePropertyValue ([bool]$row.enabled.Checked) -Force
       }
       $path = Join-Path $script:DataRoot 'profiles.json'
-      $temporary = $path + '.tmp'
-      $copy | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $temporary -Encoding UTF8
-      [System.IO.File]::Replace($temporary,$path,$null)
+      Save-ProfilePreferences -Config $copy -Path $path
       $script:ProfileConfig = $copy
       $script:ProfileRevision++
       $script:AlertBaselinePending = $true
       Apply-ProfileLayout
       if ($null -ne $script:LastData) { Render-Data $script:LastData }
       $script:SetupDialog.Close()
-      Start-Refresh
-    } catch { [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'无法保存账号设置') }
+      if (-not $SmokeTest) { Start-Refresh }
+    } catch {
+      if ($SmokeTest) { throw } [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'无法保存账号设置') }
   })
   if ($PreviewTest) {
     foreach ($row in $script:SetupRows) { $row.status.Text = '已连接'; $row.login.Text = '登录 / 切换' }
