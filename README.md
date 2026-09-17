@@ -2,15 +2,25 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.5.0**
+Current version: **v0.5.1**
 
 ## Windows EXE client (recommended)
 
 [Download the latest CodexUsage.exe](https://github.com/lv5accelerator-xy/codex-dual-usage-dashboard/releases/latest/download/CodexUsage.exe)
 
-Double-click the EXE. It installs into `%LOCALAPPDATA%\CodexUsage` and creates desktop and Start menu shortcuts without administrator permissions. The client uses Windows .NET Framework 4.8 / Windows PowerShell 5.1; it does not require a separate .NET 8 or Electron runtime. The existing quota reader remains embedded inside the EXE.
+Double-click the EXE and select **安装并启动** in the installation window. It installs into `%LOCALAPPDATA%\CodexUsage` and creates desktop and Start menu shortcuts without administrator permissions. The client uses Windows .NET Framework 4.8 / Windows PowerShell 5.1; it does not require a separate .NET 8 or Electron runtime. The existing quota reader remains embedded inside the EXE.
 
 **Upgrading from the script version:** quit the old tray app, put the EXE in the old app folder, and run it once. If present, `ui-settings.json` and `profiles.json` are copied into the client's separate data directory. Existing `.codex-personal` / `.codex-work` login credentials stay where they are; no credentials are bundled or uploaded.
+
+### Sharing and uninstalling
+
+[中文安装与分享指南](docs/FRIENDS.md) — share the release link with friends; each person logs in with their own account. Do not share local account files or logs.
+
+The client is listed as **Codex 额度** in Windows Settings → Apps. Quit the tray app before uninstalling. Uninstall removes program files and shortcuts while preserving settings and Codex account directories for reinstallation. No administrator privileges are needed.
+
+Version 0.5.1 precompiles the drawing controls during the build. The packaged UI loads a DLL instead of compiling C# source at startup. The UI and quota reader still use PowerShell; this is not a pure C# rewrite or a guarantee against security warnings.
+
+Releases include `READ-ME.txt` and `SHA256SUMS.txt` alongside the EXE and update manifest. Checksums verify consistency, not publisher identity.
 
 ### Automatic client updates
 

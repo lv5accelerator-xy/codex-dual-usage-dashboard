@@ -21,6 +21,16 @@ namespace CodexUsageDesktop {
                 Reject(() => Client.SafeEntryPath(root, "../outside.ps1"), "Zip traversal rejected");
                 Reject(() => Client.SafeEntryPath(root, "C:\\outside.ps1"), "Absolute payload path rejected");
                 Reject(() => Client.SafeEntryPath(root, "file:stream"), "Alternate data stream rejected");
+                using (var installer = Distribution.CreateInstallForm()) {
+                    installer.Show();
+                    System.Windows.Forms.Application.DoEvents();
+                    Check(installer.AcceptButton != null && installer.CancelButton != null, "Installer offers explicit installation and cancellation");
+                    using (var bitmap = new System.Drawing.Bitmap(installer.Width, installer.Height)) {
+                        installer.DrawToBitmap(bitmap, new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height));
+                        bitmap.Save(Path.Combine(root, "installer.png"));
+                    }
+                    installer.Close();
+                }
                 string hash = Client.Hash(Client.Self);
                 long size = new FileInfo(Client.Self).Length;
                 var manifest = new UpdateManifest { version = Client.CurrentVersion, exe = Client.ExeName, sha256 = hash, size = size };
@@ -45,6 +55,23 @@ namespace CodexUsageDesktop {
                 Check(Client.Hash(target + ".bak") == hash, "Subsequent replacement rotates backup");
                 string payload = Client.ExtractPayload(root);
                 Check(File.Exists(Path.Combine(payload, "tray.ps1")), "Embedded UI extracted");
+                Check(File.Exists(Path.Combine(payload, "CodexUsage.Controls.dll")), "Precompiled UI controls packaged");
+                Check(!File.Exists(Path.Combine(payload, "ui-controls.cs")), "Packaged UI requires no runtime source compilation");
+                string uninstallRoot = Path.Combine(root, "uninstall-fixture");
+                Directory.CreateDirectory(Path.Combine(uninstallRoot, "data"));
+                Directory.CreateDirectory(Path.Combine(uninstallRoot, "app"));
+                Directory.CreateDirectory(Path.Combine(uninstallRoot, "updates"));
+                File.WriteAllText(Path.Combine(uninstallRoot, "data", "ui-settings.json"), "keep-settings");
+                File.WriteAllText(Path.Combine(uninstallRoot, "unrelated.txt"), "keep-user-file");
+                File.WriteAllText(Path.Combine(uninstallRoot, Client.ExeName), "old-executable");
+                File.WriteAllText(Path.Combine(uninstallRoot, Client.ExeName + ".bak"), "old-backup");
+                Distribution.RemoveProgramFiles(uninstallRoot);
+                Check(!Directory.Exists(Path.Combine(uninstallRoot, "app")) && !Directory.Exists(Path.Combine(uninstallRoot, "updates")), "Uninstall removes versioned program and updates");
+                Check(!File.Exists(Path.Combine(uninstallRoot, Client.ExeName)) && !File.Exists(Path.Combine(uninstallRoot, Client.ExeName + ".bak")), "Uninstall removes executable and backup");
+                Check(File.ReadAllText(Path.Combine(uninstallRoot, "data", "ui-settings.json")) == "keep-settings", "Uninstall preserves preferences");
+                Check(File.ReadAllText(Path.Combine(uninstallRoot, "unrelated.txt")) == "keep-user-file", "Uninstall preserves unrelated files");
+                Distribution.RemoveProgramFiles(uninstallRoot);
+                checks++; // Repeated cleanup is safe.
                 Check(File.Exists(Path.Combine(payload, "assets", "app.ico")), "Embedded application icon extracted");
                 Check(!File.Exists(Path.Combine(payload, "auth.json")), "No account credentials packaged");
                 Check(Client.ExtractPayload(root) == payload, "Extraction is idempotent");

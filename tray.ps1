@@ -74,11 +74,16 @@ function Show-FatalError {
 }
 
 try {
-  Write-TrayLog '===== v0.5.0 tray starting ====='
+  Write-TrayLog '===== v0.5.1 tray starting ====='
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
   if (-not ('CodexUsage.Surface' -as [type])) {
-    Add-Type -Path (Join-Path $script:Root 'ui-controls.cs') -ReferencedAssemblies System.Windows.Forms,System.Drawing
+    $controlsDll = Join-Path $script:Root 'CodexUsage.Controls.dll'
+    if (Test-Path -LiteralPath $controlsDll) {
+      Add-Type -Path $controlsDll
+    } else {
+      Add-Type -Path (Join-Path $script:Root 'ui-controls.cs') -ReferencedAssemblies System.Windows.Forms,System.Drawing
+    }
   }
   [CodexUsage.NativeDisplay]::EnableDpi()
   [System.Windows.Forms.Application]::EnableVisualStyles()
@@ -1094,6 +1099,8 @@ try {
   $releaseLink = $clientMenu.DropDownItems.Add('版本说明 / 下载客户端')
   $releaseLink.Add_Click({ Start-Process 'https://github.com/lv5accelerator-xy/codex-dual-usage-dashboard/releases/latest' })
   [void]$menu.Items.Add($clientMenu)
+  $helpItem = $menu.Items.Add('使用指南 / 分享给朋友')
+  $helpItem.Add_Click({ Start-Process 'https://github.com/lv5accelerator-xy/codex-dual-usage-dashboard/blob/main/docs/FRIENDS.md' })
   [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
   $itemLogs = $menu.Items.Add('打开日志文件夹')
   $itemExit = $menu.Items.Add('退出')

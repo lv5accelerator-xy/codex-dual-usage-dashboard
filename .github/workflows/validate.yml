@@ -56,6 +56,7 @@ jobs:
           path: |
             artifacts/*.png
             artifacts/client-self-test/client-test.txt
+            artifacts/client-self-test/installer.png
             artifacts/client-self-test/data/logs/*.log
             artifacts/client-self-test/app/*/artifacts/*.png
             logs/*.log
@@ -88,16 +89,18 @@ jobs:
             exists=true
           fi
           cat > release-notes.md <<'NOTES'
-          Windows 10/11 desktop client. Download **CodexUsage.exe** and double-click it. The first launch installs per-user and creates shortcuts; no administrator access is needed.
+          Windows 10/11 desktop client. Download **CodexUsage.exe** and double-click it. Confirm “安装并启动” on first launch. Installation is per-user and creates shortcuts; no administrator access is needed. Windows Settings → Apps now includes an uninstall entry that preserves settings and account data.
 
           后续版本在后台自动检查和下载，右键选择“客户端更新 → 重启并更新”生效，也可退出后自动安装。额度每分钟刷新一次；保留紧凑模式、透明度设置、贴边吸附与低额度通知。
 
           首次从脚本版升级请先退出旧程序。将 EXE 放在旧版本目录首次运行，可自动迁移 ui-settings.json 和 profiles.json。现有账号凭据继续保留在用户的 .codex-personal / .codex-work 目录。
 
-          This build is unsigned. The SHA-256 digest and version are in update.json. Windows may show a publisher/reputation prompt on first launch.
+          分享给朋友请发送本发布页链接，每个人登录自己的账号。详细步骤见 READ-ME.txt。界面控件已提前编译，客户端仍使用 PowerShell。
+
+          This build is unsigned. The SHA-256 digest is in SHA256SUMS.txt and update.json. Windows may show a publisher/reputation prompt on first launch.
           NOTES
           if [[ "$exists" == false ]]; then
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Codex Usage $tag" --notes-file release-notes.md --draft
           fi
-          gh release upload "$tag" dist/CodexUsage.exe dist/update.json --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$tag" dist/CodexUsage.exe dist/update.json dist/SHA256SUMS.txt dist/READ-ME.txt --repo "$GITHUB_REPOSITORY" --clobber
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest

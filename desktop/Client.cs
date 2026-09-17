@@ -38,13 +38,15 @@ namespace CodexUsageDesktop {
         public static string Self { get { return Assembly.GetExecutingAssembly().Location; } }
         public static string InstallRoot { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexUsage"); } }
         static string LogPath;
-                static readonly object LogGate = new object();
+        static readonly object LogGate = new object();
 
         [STAThread]
         public static int Main(string[] args) {
             Application.EnableVisualStyles();
             try {
                 if (args.Length == 2 && args[0] == "--self-test") return SelfTest.Run(Path.GetFullPath(args[1]));
+                if (args.Length == 2 && args[0] == "--finish-uninstall") return Distribution.FinishUninstall(int.Parse(args[1]));
+                if (args.Length == 1 && args[0] == "--uninstall") return Distribution.Uninstall();
                 Directory.CreateDirectory(InstallRoot);
                 LogPath = Path.Combine(InstallRoot, "client.log");
                 if (args.Length == 5 && args[0] == "--apply-update") return ApplyUpdate(args);
@@ -56,10 +58,11 @@ namespace CodexUsageDesktop {
                 using (var mutex = new Mutex(true, "Local\\CodexUsageDesktopClient", out created)) {
                     if (!created) { File.WriteAllText(Path.Combine(data, "show.request"), "show"); return 0; }
                     if (!SamePath(Self, target)) {
+                        if (!Distribution.ConfirmInstall()) return 0;
                         // Install/update only while no installed client owns this mutex.
                         if (File.Exists(target)) {
                             var installed = Version.Parse(FileVersionInfo.GetVersionInfo(target).FileVersion);
-                            if (installed <= Assembly.GetExecutingAssembly().GetName().Version) File.Copy(Self, target, true);
+                            if (installed <= Assembly.GetExecutingAssembly().GetName().Version) InstallCandidate(Self, target, Hash(Self), new FileInfo(Self).Length);
                         } else File.Copy(Self, target);
                         PrepareData(data, null, Path.GetDirectoryName(Self));
                         CreateShortcuts(target);
@@ -68,6 +71,7 @@ namespace CodexUsageDesktop {
                         return 0;
                     }
                     CreateShortcuts(target);
+                    Distribution.Register(target);
                     string payload = ExtractPayload(InstallRoot);
                     PrepareData(data, payload, null);
                     string marker = Path.Combine(InstallRoot, "post-update.pending");
