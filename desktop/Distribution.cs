@@ -83,6 +83,9 @@ namespace CodexUsageDesktop {
                 RemoveProgramFiles(Client.InstallRoot);
                 RemoveShortcuts();
                 Registry.CurrentUser.DeleteSubKeyTree(RegistryPath, false);
+                using (var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)) {
+                    if (run != null) run.DeleteValue("CodexUsage", false);
+                }
             }
             MessageBox.Show("客户端已卸载。设置和账号登录信息已保留。", "Codex 额度", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return 0;

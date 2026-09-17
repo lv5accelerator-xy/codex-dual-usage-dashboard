@@ -44,7 +44,7 @@ $exe = Join-Path $dist 'CodexUsage.exe'
   "/resource:$zip,CodexUsage.Payload.zip" `
   /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll `
   /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /reference:System.Web.Extensions.dll /reference:Microsoft.CSharp.dll `
-  (Join-Path $PSScriptRoot 'Client.cs') (Join-Path $PSScriptRoot 'Distribution.cs') (Join-Path $PSScriptRoot 'SelfTest.cs') $assemblyInfo
+  (Join-Path $PSScriptRoot 'UsageReader.cs') (Join-Path $PSScriptRoot 'Client.cs') (Join-Path $PSScriptRoot 'Distribution.cs') (Join-Path $PSScriptRoot 'SelfTest.cs') $assemblyInfo
 if ($LASTEXITCODE -ne 0) { throw 'Desktop client compilation failed.' }
 $manifest = [ordered]@{
   version = $version

@@ -9,6 +9,19 @@ namespace CodexUsageDesktop {
         static int checks;
         static void Check(bool condition, string text) { if (!condition) throw new Exception(text); checks++; }
         static void Reject(Action action, string text) { bool rejected = false; try { action(); } catch { rejected = true; } Check(rejected, text); }
+        public static int RpcFixture() {
+            string line;
+            while ((line = Console.ReadLine()) != null) {
+                var request = new JavaScriptSerializer().DeserializeObject(line);
+                string id = UsageReader.Text(UsageReader.Get(request, "id"));
+                if (id == "1") Console.WriteLine("{\"id\":\"1\",\"result\":{}}");
+                if (id == "2") {
+                    Console.WriteLine("{\"method\":\"notification\",\"params\":{}}");
+                    Console.WriteLine("{\"id\":\"2\",\"result\":{\"rateLimits\":{\"primary\":{\"windowDurationMins\":300,\"usedPercent\":100,\"resetsAt\":2000000000},\"secondary\":{\"windowDurationMins\":10080,\"usedPercent\":20}}}}");
+                }
+            }
+            return 0;
+        }
         public static int Run(string root) {
             Directory.CreateDirectory(root);
             string report = Path.Combine(root, "client-test.txt");
@@ -31,6 +44,23 @@ namespace CodexUsageDesktop {
                     }
                     installer.Close();
                 }
+                var fixtureInfo = UsageReader.ServerInfo(Client.Self, root);
+                fixtureInfo.Arguments = "--rpc-fixture";
+                var fixture = UsageReader.ReadRpc(fixtureInfo);
+                var fixtureProfile = new JavaScriptSerializer().DeserializeObject("{\"id\":\"personal\",\"label\":\"Test\",\"codexHome\":\"~/fixture\"}");
+                var converted = new JavaScriptSerializer().DeserializeObject(new JavaScriptSerializer().Serialize(UsageReader.ConvertResult(fixtureProfile, fixture)));
+                Check(UsageReader.Number(UsageReader.Get(UsageReader.Get(converted, "fiveHour"), "remainingPercent")) == 0, "Native RPC exhausted quota survives conversion");
+                Check(UsageReader.Number(UsageReader.Get(UsageReader.Get(converted, "weekly"), "remainingPercent")) == 80, "Native reader preserves independent weekly quota");
+                Check(UsageReader.Iso(null) == null && UsageReader.Iso(-1) == null, "Missing reset is never invented");
+                Check(UsageReader.Number("NaN") == null, "Invalid numeric quota rejected");
+                var missing = UsageReader.Window(new System.Collections.Generic.Dictionary<string, object>(), 0);
+                Check(UsageReader.Get(missing, "remainingPercent") == null, "Missing native quota is not zero");
+                var mapFixture = new JavaScriptSerializer().DeserializeObject("{\"rateLimitsByLimitId\":{\"codex\":{\"primary\":{\"windowDurationMins\":300,\"usedPercent\":25}}}}");
+                var mapped = new JavaScriptSerializer().DeserializeObject(new JavaScriptSerializer().Serialize(UsageReader.ConvertResult(fixtureProfile, mapFixture)));
+                Check(UsageReader.Number(UsageReader.Get(UsageReader.Get(mapped, "fiveHour"), "remainingPercent")) == 75, "Native reader accepts mapped snapshots");
+                Check(UpdateAgent.FailureMessage(new System.Net.WebException()).Contains("网络"), "Network update error is actionable");
+                Check(UpdateAgent.FailureMessage(new InvalidDataException()).Contains("校验"), "Verification failure distinguished from network");
+                Check(UpdateAgent.FailureMessage(new UnauthorizedAccessException()).Contains("权限"), "Write permission failure distinguished");
                 string hash = Client.Hash(Client.Self);
                 long size = new FileInfo(Client.Self).Length;
                 var manifest = new UpdateManifest { version = Client.CurrentVersion, exe = Client.ExeName, sha256 = hash, size = size };

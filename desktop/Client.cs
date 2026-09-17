@@ -44,6 +44,8 @@ namespace CodexUsageDesktop {
         public static int Main(string[] args) {
             Application.EnableVisualStyles();
             try {
+                if (args.Length == 2 && args[0] == "--read-usage") return UsageReader.Run(Path.GetFullPath(args[1]));
+                if (args.Length == 1 && args[0] == "--rpc-fixture") return SelfTest.RpcFixture();
                 if (args.Length == 2 && args[0] == "--self-test") return SelfTest.Run(Path.GetFullPath(args[1]));
                 if (args.Length == 2 && args[0] == "--finish-uninstall") return Distribution.FinishUninstall(int.Parse(args[1]));
                 if (args.Length == 1 && args[0] == "--uninstall") return Distribution.Uninstall();
@@ -141,6 +143,7 @@ namespace CodexUsageDesktop {
             info.CreateNoWindow = true;
             info.WorkingDirectory = payload;
             info.EnvironmentVariables["CODEX_USAGE_DATA_DIR"] = data;
+            info.EnvironmentVariables["CODEX_USAGE_CLIENT_PATH"] = Self;
             info.EnvironmentVariables["CODEX_USAGE_CLIENT_VERSION"] = CurrentVersion;
             info.EnvironmentVariables["CODEX_USAGE_LAUNCH_ID"] = token;
             return Process.Start(info);
@@ -303,7 +306,11 @@ namespace CodexUsageDesktop {
                 Directory.CreateDirectory(folder);
                 string candidate = Path.Combine(folder, "CodexUsage-" + manifest.version + ".exe");
                 string temporary = candidate + ".tmp";
-                File.WriteAllBytes(temporary, Download(Client.AssetUrl(release.tag_name, Client.ExeName), 30 * 1024 * 1024));
+                int lastPercent = -1;
+                File.WriteAllBytes(temporary, Download(Client.AssetUrl(release.tag_name, Client.ExeName), 30 * 1024 * 1024, delegate(long received, long total) {
+                    int percent = (int)Math.Min(100, received * 100 / Math.Max(1, manifest.size));
+                    if (percent != lastPercent) { lastPercent = percent; Status("downloading", "正在下载 v" + manifest.version + " · " + percent + "%", manifest.version); }
+                }));
                 Client.VerifyFile(temporary, manifest.sha256, manifest.size);
                 Version assemblyVersion = AssemblyName.GetAssemblyName(temporary).Version;
                 if (assemblyVersion.ToString(3) != manifest.version) throw new InvalidDataException("Executable version does not match the manifest.");
@@ -313,10 +320,17 @@ namespace CodexUsageDesktop {
                 Status("ready", "新版 v" + manifest.version + " 已下载，重启即可更新", manifest.version);
             } catch (Exception ex) {
                 Client.Log("Update check: " + ex.Message);
-                Status("error", "更新检查失败，稍后自动重试", Client.CurrentVersion);
+                Status("error", FailureMessage(ex) + " · 点击立即检查更新重试", Client.CurrentVersion);
             }
         }
-        static byte[] Download(string url, int limit) {
+        public static string FailureMessage(Exception ex) {
+            if (ex is WebException) return "网络连接失败";
+            if (ex is InvalidDataException || ex is BadImageFormatException) return "更新校验失败，已保留当前版本";
+            if (ex is UnauthorizedAccessException) return "更新目录无写入权限";
+            if (ex is IOException) return "更新文件写入失败，请检查磁盘空间";
+            return "更新信息无效或服务暂不可用";
+        }
+        static byte[] Download(string url, int limit, Action<long, long> progress = null) {
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             var request = (HttpWebRequest)WebRequest.Create(url);
             request.UserAgent = "CodexUsage/" + Client.CurrentVersion;
@@ -332,6 +346,7 @@ namespace CodexUsageDesktop {
                     while ((read = input.Read(buffer, 0, buffer.Length)) > 0) {
                         if (output.Length + read > limit) throw new InvalidDataException("Update download is too large.");
                         output.Write(buffer, 0, read);
+                        if (progress != null) progress(output.Length, response.ContentLength);
                     }
                     return output.ToArray();
                 }

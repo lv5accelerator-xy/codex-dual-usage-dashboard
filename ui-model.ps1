@@ -89,18 +89,32 @@ function Format-CompactPercent {
 
 function Get-CompactRecovery {
   param($FiveHour,[bool]$Stale = $false,[DateTimeOffset]$Now = [DateTimeOffset]::Now)
-  if ($null -eq $FiveHour -or $null -eq $FiveHour.remainingPercent -or [double]$FiveHour.remainingPercent -ne 0) { return '5h / 总量 · 剩余' }
+  if ($null -eq $FiveHour -or $null -eq $FiveHour.remainingPercent -or [double]$FiveHour.remainingPercent -ne 0) { return '5h / 长周期 · 剩余' }
   if ($Stale) { return '5h 恢复时间待确认' }
   try {
     $raw = $FiveHour.resetsAt
     if ($null -eq $raw -or [string]::IsNullOrWhiteSpace([string]$raw)) { return '5h 恢复时间未知' }
     $reset = if ($raw -is [DateTimeOffset]) { $raw } elseif ($raw -is [DateTime]) { [DateTimeOffset]$raw } else { [DateTimeOffset]::Parse([string]$raw) }
     if ($reset -le $Now) { return '5h 等待刷新确认' }
-    $local = $reset.ToLocalTime()
-    $today = $Now.ToLocalTime().Date
-    $clock = $local.ToString('HH:mm')
-    if ($local.Date -eq $today) { return ('5h {0} 恢复' -f $clock) }
-    if ($local.Date -eq $today.AddDays(1)) { return ('明天 {0} 恢复' -f $clock) }
-    return ($local.ToString('MM-dd HH:mm') + ' 恢复')
+    $minutes = [Math]::Max(1,[Math]::Ceiling(($reset - $Now).TotalMinutes))
+    if ($minutes -lt 60) { return ('约 {0} 分钟后恢复' -f $minutes) }
+    $hours = [Math]::Floor($minutes / 60)
+    $rest = $minutes % 60
+    return ('约 {0}小时{1}分后恢复' -f $hours,$rest)
   } catch { return '5h 恢复时间未知' }
+}
+
+function Get-ProfileEnabled {
+  param($Profile)
+  return ($null -ne $Profile -and ($Profile.PSObject.Properties.Name -notcontains 'enabled' -or [bool]$Profile.enabled))
+}
+function Get-RecoveryKey {
+  param($Profile,[DateTimeOffset]$Now = [DateTimeOffset]::Now)
+  if (Test-ProfileStale $Profile $Now) { return $null }
+  if ($null -eq $Profile.fiveHour.remainingPercent -or [double]$Profile.fiveHour.remainingPercent -ne 0) { return $null }
+  try {
+    $reset = [DateTimeOffset]::Parse([string]$Profile.fiveHour.resetsAt)
+    if ($reset -le $Now) { return ([string]$Profile.id + '|' + $reset.ToUniversalTime().ToString('o')) }
+  } catch {}
+  return $null
 }

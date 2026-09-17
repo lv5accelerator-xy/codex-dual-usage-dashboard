@@ -63,6 +63,27 @@ foreach ($entry in @(@{ form = $script:Popup; name = 'detail.png' },@{ form = $s
     $bitmap.Save((Join-Path $outputDir $entry.name),[System.Drawing.Imaging.ImageFormat]::Png)
   } finally { $bitmap.Dispose() }
 }
+# DPI and geometry contracts without requiring multiple physical monitors.
+$dpiFixture = New-Object CodexUsage.DpiForm
+$dpiFixture.ClientSize = New-Object System.Drawing.Size -ArgumentList 200,100
+$dpiChild = New-Object System.Windows.Forms.Label
+$dpiChild.SetBounds(10,10,100,20)
+$dpiFixture.Controls.Add($dpiChild)
+$dpiBounds = New-Object System.Drawing.Rectangle -ArgumentList 20,20,400,200
+$dpiFixture.ApplyDpi(192,$dpiBounds)
+Assert-Ui ($dpiFixture.DisplayDpi -eq 192 -and $dpiChild.Width -eq 200) 'DPI transition scales child geometry.'
+$dpiFixture.ApplyDpi(96,(New-Object System.Drawing.Rectangle -ArgumentList 20,20,200,100))
+Assert-Ui ($dpiChild.Width -eq 100) 'DPI roundtrip restores geometry.'
+$dpiFixture.Dispose()
+$monitorFixture = New-Object System.Drawing.Rectangle -ArgumentList -1920,0,1920,1080
+$fullscreenFixture = New-Object System.Drawing.Rectangle -ArgumentList -1920,0,1920,1080
+Assert-Ui ([CodexUsage.DesktopIntegration]::IsFullScreen($fullscreenFixture,$monitorFixture)) 'Negative-coordinate full-screen monitor is detected.'
+$smallFixture = New-Object System.Drawing.Rectangle -ArgumentList -1800,20,1000,700
+Assert-Ui (-not [CodexUsage.DesktopIntegration]::IsFullScreen($smallFixture,$monitorFixture)) 'Normal window is not treated as full screen.'
+$offscreenFixture = New-Object System.Drawing.Rectangle -ArgumentList 3000,2000,320,64
+$clamped = [CodexUsage.DesktopIntegration]::Clamp($offscreenFixture,$monitorFixture)
+Assert-Ui ($monitorFixture.Contains($clamped)) 'Disconnected-display window is moved into working area.'
+Assert-Ui ([CodexUsage.DesktopIntegration]::StartupCommand('C:\Program Files\CodexUsage.exe') -eq '"C:\Program Files\CodexUsage.exe"') 'Startup path with spaces is quoted.'
 # Compact presentation and anchor geometry use real native controls.
 Assert-Ui (-not $script:UiSettings.notificationsEnabled) 'Notifications must be off by default.'
 Set-MonitorExpanded $false
@@ -92,10 +113,26 @@ try {
   $script:Ball.DrawToBitmap($bitmap,$bounds)
   $bitmap.Save((Join-Path $outputDir 'compact.png'),[System.Drawing.Imaging.ImageFormat]::Png)
 } finally { $bitmap.Dispose() }
+Assert-Ui ($script:CompactCells.personal.FiveText -eq '100%') 'Native compact control exposes 5-hour text.'
+$script:ProfileConfig.profiles[1].enabled = $false
+Apply-ProfileLayout
+Assert-Ui (-not $script:CompactCells.work.Visible) 'Disabled account is hidden.'
+Assert-Ui ($script:Ball.Width -eq (B 220)) 'Single-account window shrinks.'
+Set-MonitorExpanded $true
+Assert-Ui ($script:Ball.Height -eq (B 108)) 'Single-account expanded window has no empty account row.'
+$script:ProfileConfig.profiles[0].label = '开发'
+Update-BallSummary $script:LastData
+Assert-Ui ($script:CompactCells.personal.AccountName -eq '开发') 'Custom name reaches compact native control.'
+$script:ProfileConfig.profiles[0].label = '个人'
+$script:ProfileConfig.profiles[1].enabled = $true
+Apply-ProfileLayout
+Set-MonitorExpanded $false
+Update-BallSummary $script:LastData
 $savedFive = $script:LastData.profiles[1].fiveHour.remainingPercent
 $script:LastData.profiles[1].fiveHour.remainingPercent = 0
 Update-BallSummary $script:LastData
 Assert-Ui ($script:CompactCells.work.Text -eq '工作 0% / 21%') 'Zero 5-hour quota keeps the independent total visible.'
+Assert-Ui ($script:CompactCells.work.FiveColor -ne $script:CompactCells.work.LongColor) 'Exhausted 5h and available long-term quota use different colors.'
 Assert-Ui ($script:CompactRecovery.work.Text -match '恢复') 'Exhausted account shows recovery in the compact window.'
 [System.Windows.Forms.Application]::DoEvents()
 $bitmap = New-Object System.Drawing.Bitmap -ArgumentList $script:Ball.Width,$script:Ball.Height

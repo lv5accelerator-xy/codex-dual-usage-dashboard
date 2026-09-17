@@ -7,7 +7,11 @@ using System.Windows.Forms;
 namespace CodexUsage {
     public static class NativeDisplay {
         [DllImport("user32.dll")] private static extern bool SetProcessDPIAware();
-        public static void EnableDpi() { try { SetProcessDPIAware(); } catch { } }
+        [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+        public static void EnableDpi() {
+            try { if (SetThreadDpiAwarenessContext(new IntPtr(-4)) != IntPtr.Zero) return; } catch (EntryPointNotFoundException) { }
+            try { SetProcessDPIAware(); } catch { }
+        }
     }
 
     public static class Shapes {
@@ -51,7 +55,7 @@ namespace CodexUsage {
         }
     }
 
-    public class FloatingForm : Form {
+    public class FloatingForm : DpiForm {
         public int Radius { get; set; }
         public FloatingForm() { DoubleBuffered = true; Radius = 16; }
         protected override void OnSizeChanged(EventArgs e) {
@@ -90,6 +94,124 @@ namespace CodexUsage {
                 using (var fill = new SolidBrush(FillColor)) e.Graphics.FillPath(fill, path);
                 e.Graphics.Restore(state);
             }
+        }
+    }
+
+    // Native window integration shared by script and packaged UI.
+    public static class DesktopIntegration {
+        [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] static extern IntPtr GetShellWindow();
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr handle, out RECT rect);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr handle);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr handle, System.Text.StringBuilder name, int count);
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr handle, out uint pid);
+        [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+        public static bool IsFullScreen(Rectangle window, Rectangle monitor) {
+            return window.Left <= monitor.Left && window.Top <= monitor.Top && window.Right >= monitor.Right && window.Bottom >= monitor.Bottom;
+        }
+        public static bool FullScreenOn(Form form) {
+            IntPtr foreground = GetForegroundWindow();
+            if (foreground == IntPtr.Zero || foreground == GetShellWindow() || IsIconic(foreground)) return false;
+            uint pid; GetWindowThreadProcessId(foreground, out pid);
+            if (pid == System.Diagnostics.Process.GetCurrentProcess().Id) return false;
+            var name = new System.Text.StringBuilder(256); GetClassName(foreground, name, 256);
+            if (name.ToString() == "Progman" || name.ToString() == "WorkerW") return false;
+            RECT rect; if (!GetWindowRect(foreground, out rect)) return false;
+            return IsFullScreen(Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom), Screen.FromControl(form).Bounds);
+        }
+        public static Rectangle Clamp(Rectangle window, Rectangle area) {
+            int width = Math.Min(window.Width, area.Width), height = Math.Min(window.Height, area.Height);
+            return new Rectangle(Math.Max(area.Left, Math.Min(window.X, area.Right - width)), Math.Max(area.Top, Math.Min(window.Y, area.Bottom - height)), width, height);
+        }
+        public static void KeepVisible(Form form) {
+            var area = Screen.FromRectangle(form.Bounds).WorkingArea;
+            var bounds = Clamp(form.Bounds, area);
+            if (form.Bounds != bounds) form.Bounds = bounds;
+        }
+        public static string StartupCommand(string exe) {
+            if (exe.IndexOf('"') >= 0 || !System.IO.Path.IsPathRooted(exe)) throw new ArgumentException("Invalid executable path.");
+            return "\"" + exe + "\"";
+        }
+        public static bool IsStartupEnabled(string exe) {
+            using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
+                return key != null && string.Equals(key.GetValue("CodexUsage") as string, StartupCommand(exe), StringComparison.OrdinalIgnoreCase);
+        }
+        public static void SetStartup(string exe, bool enabled) {
+            using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")) {
+                if (enabled) key.SetValue("CodexUsage", StartupCommand(exe));
+                else key.DeleteValue("CodexUsage", false);
+            }
+        }
+    }
+
+    public class DpiForm : Form {
+        public int DisplayDpi { get; set; }
+        public event EventHandler ScaleChanged;
+        public DpiForm() { DisplayDpi = 96; AutoScaleMode = AutoScaleMode.None; }
+        static Padding ResizePadding(Padding p, float factor) { return new Padding((int)Math.Round(p.Left * factor), (int)Math.Round(p.Top * factor), (int)Math.Round(p.Right * factor), (int)Math.Round(p.Bottom * factor)); }
+        readonly System.Collections.Generic.List<Font> dpiFonts = new System.Collections.Generic.List<Font>();
+        void ScaleTree(Control control, float factor) {
+            control.SuspendLayout();
+            try {
+                foreach (Control child in control.Controls) ScaleTree(child, factor);
+                control.Bounds = new Rectangle((int)Math.Round(control.Left * factor), (int)Math.Round(control.Top * factor), (int)Math.Round(control.Width * factor), (int)Math.Round(control.Height * factor));
+                control.Padding = ResizePadding(control.Padding, factor);
+                control.Margin = ResizePadding(control.Margin, factor);
+                var font = new Font(control.Font.FontFamily, control.Font.Size * factor, control.Font.Style, control.Font.Unit);
+                dpiFonts.Add(font);
+                control.Font = font;
+                var table = control as TableLayoutPanel;
+                if (table != null) {
+                    foreach (RowStyle row in table.RowStyles) if (row.SizeType == SizeType.Absolute) row.Height *= factor;
+                    foreach (ColumnStyle column in table.ColumnStyles) if (column.SizeType == SizeType.Absolute) column.Width *= factor;
+                }
+            } finally { control.ResumeLayout(false); }
+        }
+        public void ApplyDpi(int dpi, Rectangle suggested) {
+            if (dpi < 48 || dpi > 768) return;
+            float factor = (float)dpi / Math.Max(48, DisplayDpi);
+            SuspendLayout();
+            try {
+                foreach (Control child in Controls) ScaleTree(child, factor);
+                Padding = ResizePadding(Padding, factor);
+                MinimumSize = new Size((int)Math.Round(MinimumSize.Width * factor), (int)Math.Round(MinimumSize.Height * factor));
+                DisplayDpi = dpi;
+                Bounds = suggested;
+                PerformLayout();
+            } finally { ResumeLayout(true); }
+            if (ScaleChanged != null) ScaleChanged(this, EventArgs.Empty);
+            Invalidate(true);
+        }
+        protected override void Dispose(bool disposing) {
+            base.Dispose(disposing);
+            if (disposing) { foreach (var font in dpiFonts) font.Dispose(); dpiFonts.Clear(); }
+        }
+        protected override void WndProc(ref Message message) {
+            if (message.Msg == 0x02E0) { // WM_DPICHANGED, per-window suggested physical bounds.
+                var rect = (DesktopIntegration.RECT)Marshal.PtrToStructure(message.LParam, typeof(DesktopIntegration.RECT));
+                ApplyDpi((int)(message.WParam.ToInt64() & 0xffff), Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom));
+                message.Result = IntPtr.Zero;
+                return;
+            }
+            base.WndProc(ref message);
+        }
+    }
+
+    public sealed class SplitQuotaLabel : Control {
+        public string AccountName { get; set; }
+        public string FiveText { get; set; }
+        public string LongText { get; set; }
+        public Color FiveColor { get; set; }
+        public Color LongColor { get; set; }
+        public SplitQuotaLabel() { DoubleBuffered = true; ResizeRedraw = true; AccountName = ""; FiveText = LongText = "—"; FiveColor = LongColor = Color.White; }
+        protected override void OnPaint(PaintEventArgs e) {
+            base.OnPaint(e);
+            var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
+            int nameWidth = Width * 32 / 100, valueWidth = (Width - nameWidth - 10) / 2;
+            TextRenderer.DrawText(e.Graphics, AccountName, Font, new Rectangle(0, 0, nameWidth, Height), ForeColor, flags);
+            TextRenderer.DrawText(e.Graphics, FiveText, Font, new Rectangle(nameWidth, 0, valueWidth, Height), FiveColor, flags);
+            TextRenderer.DrawText(e.Graphics, "/", Font, new Rectangle(nameWidth + valueWidth, 0, 10, Height), Color.Gray, flags);
+            TextRenderer.DrawText(e.Graphics, LongText, Font, new Rectangle(nameWidth + valueWidth + 10, 0, valueWidth, Height), LongColor, flags);
         }
     }
 }

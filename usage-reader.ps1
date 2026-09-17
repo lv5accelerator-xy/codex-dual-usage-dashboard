@@ -308,6 +308,7 @@ function Get-CodexUsageAllProfiles {
   $profiles = Read-ProfilesConfig -ConfigPath $ConfigPath
   $results = @()
   foreach ($profile in $profiles) {
+    if ($profile.PSObject.Properties.Name -contains 'enabled' -and -not $profile.enabled) { continue }
     $results += Get-CodexUsageForProfile -Profile $profile -CodexPath $CodexPath
   }
   return [pscustomobject]@{

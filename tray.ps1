@@ -122,10 +122,11 @@ try {
     BallBack = [System.Drawing.ColorTranslator]::FromHtml('#202228')
   }
 
-  function U { param([double]$Value) return [int][Math]::Round($Value * $script:UiScale) }
+  function U { param([double]$Value) $scale = if ($null -ne $script:Popup) { $script:Popup.DisplayDpi / 96.0 } else { $script:UiScale }; return [int][Math]::Round($Value * $scale) }
 
   function New-UiFont {
     param([single]$Size = 10,[switch]$Bold)
+    if ($null -ne $script:Popup) { $Size = [single]($Size * $script:Popup.DisplayDpi / ($script:UiScale * 96)) }
     $key = "$Size/$($Bold.IsPresent)"
     if (-not $script:Fonts.ContainsKey($key)) {
       $style = if ($Bold) { [System.Drawing.FontStyle]::Bold } else { [System.Drawing.FontStyle]::Regular }
@@ -206,6 +207,8 @@ try {
       panelHeight = (U 840)
       topMost = $true
       ballVisible = $true
+      setupSeen = $false
+      hideFullscreen = $false
       compactMode = $true
       compactOpacity = 80
       edgeSnap = $true
@@ -222,7 +225,7 @@ try {
     if (Test-Path -LiteralPath $script:UiSettingsPath) {
       try {
         $loaded = Get-Content -LiteralPath $script:UiSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        foreach ($key in @('ballX','ballY','panelX','panelY','panelWidth','panelHeight','topMost','ballVisible','compactMode','compactOpacity','edgeSnap','dockHorizontal','dockVertical','notificationsEnabled','notificationThresholds')) {
+        foreach ($key in @('ballX','ballY','panelX','panelY','panelWidth','panelHeight','topMost','ballVisible','compactMode','compactOpacity','edgeSnap','dockHorizontal','dockVertical','notificationsEnabled','notificationThresholds','setupSeen','hideFullscreen')) {
           if ($loaded.PSObject.Properties.Name -contains $key) {
             $settings[$key] = $loaded.$key
           }
@@ -246,7 +249,8 @@ try {
         $point = if ($null -ne $script:RestLocation) { $script:RestLocation } else { $script:Ball.Location }
         $script:UiSettings.ballX = $point.X
         $script:UiSettings.ballY = $point.Y
-        $script:UiSettings.ballVisible = $script:Ball.Visible
+        # Preserve the user's preference while temporarily hidden for full-screen apps.
+        if (-not $script:AutoHidden) { $script:UiSettings.ballVisible = $script:Ball.Visible }
       }
       if ($null -ne $script:Popup) {
         $script:UiSettings.panelX = $script:Popup.Left
@@ -279,7 +283,7 @@ try {
 
   function Get-DefaultBallLocation {
     $area = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    return (New-Object System.Drawing.Point -ArgumentList ($area.Right - (U 268)),($area.Bottom - (U 180)))
+    return (New-Object System.Drawing.Point -ArgumentList ($area.Right - (B 384)),($area.Bottom - (U 180)))
   }
 
   function Get-DefaultPanelLocation {
@@ -294,7 +298,7 @@ try {
     $x = $script:Ball.Left
     $y = $script:Ball.Top
     if ($script:UiSettings.compactMode -and $script:MonitorExpanded -and $script:UiSettings.dockVertical -eq 'bottom') {
-      $y = $script:Ball.Bottom - (U 64)
+      $y = $script:Ball.Bottom - (B 64)
     }
     $script:RestLocation = New-Object System.Drawing.Point -ArgumentList $x,$y
   }
@@ -315,14 +319,14 @@ try {
       Update-MonitorOpacity
       $script:ExpandedGrid.Visible = $Expanded
       $script:CompactGrid.Visible = -not $Expanded
-      $height = if ($Expanded) { 142 } else { 64 }
+      $height = if ($Expanded) { Get-ExpandedHeight } else { 64 }
       $script:Ball.Padding = if ($Expanded) {
-        New-Object System.Windows.Forms.Padding -ArgumentList (U 14),(U 10),(U 14),(U 10)
-      } else { New-Object System.Windows.Forms.Padding -ArgumentList (U 12),(U 4),(U 12),(U 4) }
-      $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (U 320),(U $height)
+        New-Object System.Windows.Forms.Padding -ArgumentList (B 14),(B 10),(B 14),(B 10)
+      } else { New-Object System.Windows.Forms.Padding -ArgumentList (B 12),(B 4),(B 12),(B 4) }
+      $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (B $(if (@(Get-ActiveIds).Count -eq 1) { 220 } else { 360 })),(B $height)
       $x = $script:RestLocation.X
       $y = $script:RestLocation.Y
-      if ($Expanded -and $script:UiSettings.compactMode -and $script:UiSettings.dockVertical -eq 'bottom') { $y -= U 78 }
+      if ($Expanded -and $script:UiSettings.compactMode -and $script:UiSettings.dockVertical -eq 'bottom') { $y -= B ((Get-ExpandedHeight) - 64) }
       $script:Ball.Location = Clamp-Location -X $x -Y $y -Width $script:Ball.Width -Height $script:Ball.Height
     } finally { $script:Ball.ResumeLayout($true) }
   }
@@ -526,6 +530,7 @@ try {
       if ($null -eq $cells) { continue }
       $pair = Get-QuotaPair $profile
       $stale = (Test-ProfileStale $profile) -or -not [string]::IsNullOrEmpty($script:RefreshError)
+      $cells.name.Text = Get-AccountName $id
       $cells.five.Text = Format-Percent $pair.fiveHour
       $cells.long.Text = Format-Percent $pair.longTerm
       $cells.five.ForeColor = Get-ValueColor $pair.fiveHour $stale
@@ -543,15 +548,21 @@ try {
         $values = @(@($pair.fiveHour,$pair.longTerm) | Where-Object { $null -ne $_ })
         $minimum = if ($values.Count) { ($values | Measure-Object -Minimum).Minimum } else { $null }
         $label = $script:CompactCells[$id]
-        $account = if ($id -eq 'personal') { '个人' } else { '工作' }
+        $account = Get-AccountName $id
         $mark = if ($stale -and ($null -ne $Data -or -not [string]::IsNullOrEmpty($script:RefreshError))) { ' ! ' } else { ' ' }
         $label.Text = $account + $mark + (Format-CompactPercent $pair.fiveHour) + ' / ' + (Format-CompactPercent $pair.longTerm)
         $recovery = $script:CompactRecovery[$id]
         $recovery.Text = Get-CompactRecovery $profile.fiveHour $stale
         $recovery.ForeColor = if ($null -ne $pair.fiveHour -and [double]$pair.fiveHour -eq 0 -and -not $stale) { $script:Theme.Warning } else { $script:Theme.TextMuted }
-        $label.ForeColor = if ($stale -and ($null -ne $Data -or -not [string]::IsNullOrEmpty($script:RefreshError))) { $script:Theme.Warning } else { Get-ValueColor $minimum }
-        $script:ToolTip.SetToolTip($label,($account + ' · 5h / 总量剩余（总量指长周期额度）' + "`r`n5 小时：" + (Format-Percent $pair.fiveHour) + "`r`n" + $tip))
-        $script:ToolTip.SetToolTip($recovery,('5 小时额度用尽时显示本机时间；以实际刷新结果为准。' + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt))))
+        $label.AccountName = $account + $(if ($stale -and $null -ne $Data) { ' !' } else { '' })
+        $label.FiveText = Format-CompactPercent $pair.fiveHour
+        $label.LongText = Format-CompactPercent $pair.longTerm
+        $label.ForeColor = if ($stale) { $script:Theme.Warning } else { $script:Theme.TextPrimary }
+        $label.FiveColor = Get-ValueColor $pair.fiveHour $stale
+        $label.LongColor = Get-ValueColor $pair.longTerm $stale
+        $label.Invalidate()
+        $script:ToolTip.SetToolTip($label,($account + ' · 5h / 长周期剩余（长周期指长周期额度）' + "`r`n5 小时：" + (Format-Percent $pair.fiveHour) + "`r`n" + $tip))
+        $script:ToolTip.SetToolTip($recovery,('5 小时额度用尽时显示本机时间；以实际刷新结果为准。' + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt)) + $(try { "`r`n" + ([DateTimeOffset]::Parse([string]$profile.fiveHour.resetsAt)).ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss zzz') } catch { '' })))
       }
     }
   }
@@ -613,7 +624,7 @@ try {
     $script:ContentPanel.SuspendLayout()
     try {
       Clear-Content
-      foreach ($profile in @($Data.profiles)) { if ($null -ne $profile) { Add-AccountCard $profile } }
+      foreach ($profile in @($Data.profiles)) { if ($null -ne $profile -and [string]$profile.id -in @(Get-ActiveIds)) { $profile.label = Get-AccountName ([string]$profile.id); Add-AccountCard $profile } }
       Update-CardWidths
     } finally { $script:ContentPanel.ResumeLayout($true) }
     $maxScroll = [Math]::Max(0,$script:ScrollBar.Maximum - $script:ScrollBar.LargeChange + 1)
@@ -626,6 +637,7 @@ try {
     $config = Get-Content -LiteralPath (Join-Path $script:DataRoot 'profiles.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $pending = @()
     foreach ($profile in $config.profiles) {
+      if (-not (Get-ProfileEnabled $profile)) { continue }
       $pending += [pscustomobject]@{ id = $profile.id; label = $profile.label; ok = $true; planType = '等待读取' }
     }
     Render-Data ([pscustomobject]@{ profiles = $pending })
@@ -638,6 +650,7 @@ try {
       $config = Get-Content -LiteralPath (Join-Path $script:DataRoot 'profiles.json') -Raw -Encoding UTF8 | ConvertFrom-Json
       $failed = @()
       foreach ($profile in $config.profiles) {
+      if (-not (Get-ProfileEnabled $profile)) { continue }
         $failed += [pscustomobject]@{ id = $profile.id; label = $profile.label; ok = $false; error = $Message }
       }
       Render-Data ([pscustomobject]@{ profiles = $failed })
@@ -648,6 +661,7 @@ try {
   function Start-Refresh {
     param([switch]$Silent)
     if ($script:RefreshPending) { return }
+    $script:ReadRevision = $script:ProfileRevision
     $script:RefreshPending = $true
     $script:RefreshStarted = [DateTimeOffset]::Now
     $script:RefreshButton.Enabled = $false
@@ -661,6 +675,10 @@ try {
       $psi.FileName = Join-Path $PSHOME 'powershell.exe'
       if (-not (Test-Path -LiteralPath $psi.FileName)) { $psi.FileName = 'powershell.exe' }
       $psi.Arguments = ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -OutputPath "{1}" -LogPath "{2}"' -f $worker,$script:CachePath,$script:WorkerLog)
+      if (-not [string]::IsNullOrWhiteSpace($env:CODEX_USAGE_CLIENT_PATH)) {
+        $psi.FileName = $env:CODEX_USAGE_CLIENT_PATH
+        $psi.Arguments = '--read-usage "' + $script:CachePath + '"'
+      }
       $psi.WorkingDirectory = $script:Root
       $psi.UseShellExecute = $false
       $psi.CreateNoWindow = $true
@@ -701,6 +719,7 @@ try {
       $payload = Get-Content -LiteralPath $script:CachePath -Raw -Encoding UTF8 | ConvertFrom-Json
       if (-not $payload.ok) { throw ([string]$payload.error) }
       if (@($payload.data.profiles).Count -eq 0) { throw '未配置账号，请检查 profiles.json。' }
+      if ($script:ReadRevision -ne $script:ProfileRevision) { Start-Refresh; return }
       $script:LastData = Merge-DisplayData -Previous $script:LastData -Incoming $payload.data
       $script:RefreshError = ''
       Process-QuotaNotifications $payload.data
@@ -790,9 +809,12 @@ try {
     try { $script:AppContext.ExitThread() } catch {}
   }
 
+  . (Join-Path $script:Root 'ui-experience.ps1')
   $script:UiSettings = Load-UiSettings
+  Load-ProfilePreferences
   Load-AlertState
-  $script:Popup = New-Object System.Windows.Forms.Form
+  $script:Popup = New-Object CodexUsage.DpiForm
+  $script:Popup.DisplayDpi = [int]($script:UiScale * 96)
   $script:Popup.Text = 'Codex 额度'
   $iconPath = Join-Path $script:Root 'assets\app.ico'
   $script:AppIcon = if (Test-Path -LiteralPath $iconPath) { New-Object System.Drawing.Icon -ArgumentList $iconPath } else { [System.Drawing.SystemIcons]::Information }
@@ -830,7 +852,7 @@ try {
   Add-GridRow $header 30
   Add-GridRow $header 22
   $title = New-Label -Text 'Codex 额度' -Size 15 -Bold
-  $subtitle = New-Label -Text '双账号使用概览 · 所有数值均为剩余' -Size 9 -Muted
+  $subtitle = New-Label -Text '账号使用概览 · 所有数值均为剩余' -Size 9 -Muted
   $header.Controls.Add($title,0,0)
   $header.Controls.Add($subtitle,0,1)
   $script:RefreshButton = New-Button '刷新'
@@ -873,6 +895,7 @@ try {
   })
 
   $script:Ball = New-Object CodexUsage.FloatingForm
+  $script:Ball.DisplayDpi = [int]($script:UiScale * 96)
   $script:Ball.Text = 'Codex 额度悬浮面板'
   $script:Ball.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
   $script:Ball.Radius = U 16
@@ -927,11 +950,13 @@ try {
   Add-GridRow $script:CompactGrid 22
   $index = 0
   foreach ($id in @('personal','work')) {
-    $label = New-Label -Text $(if ($id -eq 'personal') { '个人 —' } else { '工作 —' }) -Size 10 -Bold
-    $label.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $label = New-Object CodexUsage.SplitQuotaLabel
+    $label.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $label.Margin = New-Object System.Windows.Forms.Padding -ArgumentList 0
+    $label.Font = New-UiFont -Size 9 -Bold
     $script:CompactCells[$id] = $label
     $script:CompactGrid.Controls.Add($label,$index,0)
-    $recovery = New-Label -Text '5h / 总量 · 剩余' -Size 8 -Muted
+    $recovery = New-Label -Text '5h / 长周期 · 剩余' -Size 8 -Muted
     $recovery.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
     $script:CompactRecovery[$id] = $recovery
     $script:CompactGrid.Controls.Add($recovery,$index,1)
@@ -1082,6 +1107,20 @@ try {
   $itemTopMost = $menu.Items.Add('始终置顶')
   $itemTopMost.CheckOnClick = $true
   $itemTopMost.Checked = [bool]$script:UiSettings.topMost
+  $itemAccounts = $menu.Items.Add('账号与首次使用')
+  $itemAccounts.Add_Click({ Show-AccountSettings })
+  $itemStartup = $menu.Items.Add('开机启动')
+  $itemStartup.CheckOnClick = $true
+  $itemStartup.Enabled = -not [string]::IsNullOrWhiteSpace($env:CODEX_USAGE_CLIENT_PATH)
+  if ($itemStartup.Enabled -and -not $SmokeTest) { $itemStartup.Checked = [CodexUsage.DesktopIntegration]::IsStartupEnabled($env:CODEX_USAGE_CLIENT_PATH) }
+  $itemStartup.Add_Click({
+    try { [CodexUsage.DesktopIntegration]::SetStartup($env:CODEX_USAGE_CLIENT_PATH,$itemStartup.Checked) }
+    catch { $itemStartup.Checked = -not $itemStartup.Checked; [void][System.Windows.Forms.MessageBox]::Show('无法修改开机启动设置。','Codex 额度') }
+  })
+  $itemFullscreen = $menu.Items.Add('全屏时隐藏悬浮窗')
+  $itemFullscreen.CheckOnClick = $true
+  $itemFullscreen.Checked = [bool]$script:UiSettings.hideFullscreen
+  $itemFullscreen.Add_Click({ $script:UiSettings.hideFullscreen = $itemFullscreen.Checked; Update-DesktopExperience; Save-UiSettings })
   $itemReset = $menu.Items.Add('重置界面位置')
   [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
   $loginMenu = New-Object System.Windows.Forms.ToolStripMenuItem
@@ -1118,6 +1157,7 @@ try {
   $itemToggle.Add_Click({ Toggle-Popup })
   $itemRefresh.Add_Click({ Start-Refresh })
   $itemBallVisible.Add_Click({
+    $script:AutoHidden = $false
     $script:UiSettings.ballVisible = $itemBallVisible.Checked
     if ($itemBallVisible.Checked) { $script:Ball.Show() } else { $script:Ball.Hide() }
     Save-UiSettings
@@ -1148,6 +1188,9 @@ try {
   })
   $script:NotifyIcon.Visible = -not $SmokeTest
 
+  Apply-ProfileLayout
+  $script:Ball.Add_ScaleChanged({ $script:Ball.Radius = B 16; Remember-MonitorPosition })
+  $script:Popup.Add_ScaleChanged({ Update-CardWidths })
   Set-MonitorExpanded (-not [bool]$script:UiSettings.compactMode)
   $script:NotifyIcon.Add_BalloonTipClicked({ $script:Popup.Show(); $script:Popup.Activate() })
 
@@ -1172,8 +1215,8 @@ try {
   $script:HoverTimer.Add_Tick({ Update-MonitorHover })
   $script:HoverTimer.Start()
   $script:StatusTimer = New-Object System.Windows.Forms.Timer
-  $script:StatusTimer.Interval = 30000
-  $script:StatusTimer.Add_Tick({ Update-Status })
+  $script:StatusTimer.Interval = 1000
+  $script:StatusTimer.Add_Tick({ Update-Status; Update-DesktopExperience })
   $script:StatusTimer.Start()
 
   $script:PollTimer = New-Object System.Windows.Forms.Timer
@@ -1191,6 +1234,7 @@ try {
   $script:InitialTimer.Add_Tick({
     $script:InitialTimer.Stop()
     Start-Refresh -Silent
+    if (-not $script:UiSettings.setupSeen) { Show-AccountSettings }
   })
   $script:InitialTimer.Start()
 
