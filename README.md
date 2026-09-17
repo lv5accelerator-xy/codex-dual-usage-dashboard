@@ -2,7 +2,13 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.4.1**
+Current version: **v0.4.2**
+
+## v0.4.2: adjustable compact transparency and one-minute refresh
+
+The compact strip defaults to **20% transparency** (80% opacity). Right-click **紧凑小窗透明度** and move the slider to choose **0–60% transparency**. Changes apply immediately and are remembered after restart. Windows opacity affects the entire compact window, including its text; hovering to expand restores full opacity for readability. The detail panel remains fully opaque.
+
+Automatic quota refresh now runs every **60 seconds**. If a read is still running, the next tick is skipped rather than starting an overlapping worker.
 
 ## v0.4.1: compact mode, edge snapping, optional alerts
 
@@ -50,7 +56,7 @@ Hover over reset times for the exact local timestamp and monthly used/limit deta
 
 ## Refresh and data freshness
 
-- Refresh runs silently every **5 minutes** and can also be triggered manually.
+- Refresh runs silently every **1 minute** and can also be triggered manually.
 - Both manual and automatic failures retain the last successful values and show **数据未更新**.
 - One account can continue updating while the other retains its last successful data. Profiles are matched by ID, not array order.
 - Data older than ten minutes is marked stale even if there is no explicit refresh error.

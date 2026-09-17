@@ -58,7 +58,7 @@ function Test-TraySyntax {
 }
 
 try {
-  Write-StartupLog '===== launcher v0.4.1 starting ====='
+  Write-StartupLog '===== launcher v0.4.2 starting ====='
   Normalize-PowerShellFiles
   Write-StartupLog 'PowerShell source encoding normalized.'
 

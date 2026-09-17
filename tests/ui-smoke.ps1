@@ -68,6 +68,21 @@ Assert-Ui (-not $script:UiSettings.notificationsEnabled) 'Notifications must be 
 Set-MonitorExpanded $false
 [System.Windows.Forms.Application]::DoEvents()
 Assert-Ui ($script:Ball.Height -eq (U 44)) 'Compact mode must be a narrow strip.'
+Assert-Ui ([Math]::Abs($script:Ball.Opacity - 0.8) -lt 0.01) 'Compact mode starts at 20 percent transparency.'
+$script:OpacitySlider.Value = 45
+Assert-Ui ($script:UiSettings.compactOpacity -eq 55) 'Slider updates the persisted opacity preference.'
+Assert-Ui ([Math]::Abs($script:Ball.Opacity - 0.55) -lt 0.01) 'Slider applies opacity to the live compact window.'
+Set-MonitorExpanded $true
+Assert-Ui ($script:Ball.Opacity -eq 1) 'Expanded monitor restores full readability.'
+Set-MonitorExpanded $false
+Assert-Ui ([Math]::Abs($script:Ball.Opacity - 0.55) -lt 0.01) 'Collapsing restores the selected opacity.'
+$script:OpacitySlider.Value = 0
+Assert-Ui ($script:Ball.Opacity -eq 1) 'Zero transparency is fully opaque.'
+$script:OpacitySlider.Value = 60
+Assert-Ui ([Math]::Abs($script:Ball.Opacity - 0.4) -lt 0.01) 'Maximum transparency keeps the compact window visible.'
+$script:OpacitySlider.Value = 20
+Assert-Ui ($script:RefreshIntervalMs -eq 60000) 'Automatic refresh runs every minute.'
+
 Assert-Ui ($script:CompactGrid.Visible -and -not $script:ExpandedGrid.Visible) 'Only the compact grid should be visible.'
 Assert-Ui ($script:CompactCells.personal.Text -eq '个人 95%') 'Compact value is the account minimum, not a sum.'
 Assert-Ui ($script:CompactCells.work.Text -eq '工作 21%') 'Compact mode preserves independent account values.'

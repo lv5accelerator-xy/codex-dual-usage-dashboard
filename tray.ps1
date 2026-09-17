@@ -31,6 +31,7 @@ $script:ResetLabels = @()
 $script:CardStates = @()
 $script:RefreshError = ''
 $script:RefreshStarted = $null
+$script:RefreshIntervalMs = 60000
 $script:UiScale = 1.0
 . (Join-Path $script:Root 'ui-model.ps1')
 . (Join-Path $script:Root 'ui-behavior.ps1')
@@ -69,7 +70,7 @@ function Show-FatalError {
 }
 
 try {
-  Write-TrayLog '===== v0.4.1 tray starting ====='
+  Write-TrayLog '===== v0.4.2 tray starting ====='
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
   if (-not ('CodexUsage.Surface' -as [type])) {
@@ -196,6 +197,7 @@ try {
       topMost = $true
       ballVisible = $true
       compactMode = $true
+      compactOpacity = 80
       edgeSnap = $true
       dockHorizontal = 'none'
       dockVertical = 'none'
@@ -210,7 +212,7 @@ try {
     if (Test-Path -LiteralPath $script:UiSettingsPath) {
       try {
         $loaded = Get-Content -LiteralPath $script:UiSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        foreach ($key in @('ballX','ballY','panelX','panelY','panelWidth','panelHeight','topMost','ballVisible','compactMode','edgeSnap','dockHorizontal','dockVertical','notificationsEnabled','notificationThresholds')) {
+        foreach ($key in @('ballX','ballY','panelX','panelY','panelWidth','panelHeight','topMost','ballVisible','compactMode','compactOpacity','edgeSnap','dockHorizontal','dockVertical','notificationsEnabled','notificationThresholds')) {
           if ($loaded.PSObject.Properties.Name -contains $key) {
             $settings[$key] = $loaded.$key
           }
@@ -219,6 +221,7 @@ try {
         Write-TrayLog ('UI settings load warning: ' + $_.Exception.Message)
       }
     }
+    try { $settings.compactOpacity = [Math]::Max(40,[Math]::Min(100,[int]$settings.compactOpacity)) } catch { $settings.compactOpacity = 80 }
     if ($settings.dockHorizontal -notin @('none','left','right')) { $settings.dockHorizontal = 'none' }
     if ($settings.dockVertical -notin @('none','top','bottom')) { $settings.dockVertical = 'none' }
     $levels = @($settings.notificationThresholds | Where-Object { $_ -match '^\d+$' -and [int]$_ -gt 0 -and [int]$_ -lt 100 } | ForEach-Object { [int]$_ } | Sort-Object -Descending -Unique)
@@ -286,6 +289,12 @@ try {
     $script:RestLocation = New-Object System.Drawing.Point -ArgumentList $x,$y
   }
 
+  function Update-MonitorOpacity {
+    # Windows applies opacity to the whole compact window, including text.
+    # The expanded monitor always restores full contrast for reading.
+    $script:Ball.Opacity = if ($script:MonitorExpanded) { 1.0 } else { [double]$script:UiSettings.compactOpacity / 100.0 }
+  }
+
   function Set-MonitorExpanded {
     param([bool]$Expanded)
     if (-not $script:UiSettings.compactMode) { $Expanded = $true }
@@ -293,6 +302,7 @@ try {
     $script:Ball.SuspendLayout()
     try {
       $script:MonitorExpanded = $Expanded
+      Update-MonitorOpacity
       $script:ExpandedGrid.Visible = $Expanded
       $script:CompactGrid.Visible = -not $Expanded
       $height = if ($Expanded) { 142 } else { 44 }
@@ -545,11 +555,11 @@ try {
       $text = if ($problems.Count -gt 0) { ($problems -join '、') + '未更新 · 请重试' } else { '刷新失败 · 显示上次数据' }
       $compact = if ($problems.Count -eq 1) { $problems[0].Replace('账号','') + '未更新' } else { '数据未更新 · 请重试' }
     } elseif ($null -eq $script:LastData) {
-      $text = '等待首次读取 · 每 5 分钟自动更新'
+      $text = '等待首次读取 · 每 1 分钟自动更新'
       $compact = '等待首次读取'
     } else {
       try { $stamp = ([DateTimeOffset]::Parse($script:LastData.fetchedAt)).ToLocalTime().ToString('HH:mm') } catch { $stamp = '--:--' }
-      $text = '更新于 ' + $stamp + ' · 每 5 分钟自动刷新'
+      $text = '更新于 ' + $stamp + ' · 每 1 分钟自动刷新'
       $compact = '更新于 ' + $stamp
     }
     $script:StatusLabel.Text = $text
@@ -946,6 +956,41 @@ try {
     Remember-MonitorPosition
     Save-UiSettings
   })
+  $opacityMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+  $opacityMenu.Text = '紧凑小窗透明度'
+  $opacityPanel = New-Object System.Windows.Forms.Panel
+  $opacityPanel.Size = New-Object System.Drawing.Size -ArgumentList (U 232),(U 82)
+  $opacityPanel.BackColor = $script:Theme.CardBack
+  $opacityLayout = New-Grid
+  $opacityLayout.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 10),(U 4),(U 10),(U 4)
+  Add-GridRow $opacityLayout 28
+  Add-GridRow $opacityLayout 42
+  $script:OpacityLabel = New-Label -Text ('透明度：{0}%' -f (100 - $script:UiSettings.compactOpacity)) -Size 9
+  $opacityLayout.Controls.Add($script:OpacityLabel,0,0)
+  $script:OpacitySlider = New-Object System.Windows.Forms.TrackBar
+  $script:OpacitySlider.Dock = [System.Windows.Forms.DockStyle]::Fill
+  $script:OpacitySlider.Minimum = 0
+  $script:OpacitySlider.Maximum = 60
+  $script:OpacitySlider.TickFrequency = 10
+  $script:OpacitySlider.SmallChange = 5
+  $script:OpacitySlider.LargeChange = 10
+  $script:OpacitySlider.Value = 100 - [int]$script:UiSettings.compactOpacity
+  $script:OpacitySlider.AccessibleName = '紧凑小窗透明度，0% 到 60%'
+  $script:OpacitySlider.BackColor = $script:Theme.CardBack
+  $script:OpacitySlider.Add_ValueChanged({
+    $script:UiSettings.compactOpacity = 100 - $script:OpacitySlider.Value
+    $script:OpacityLabel.Text = '透明度：{0}%' -f $script:OpacitySlider.Value
+    Update-MonitorOpacity
+    Save-UiSettings
+  })
+  $opacityLayout.Controls.Add($script:OpacitySlider,0,1)
+  $opacityPanel.Controls.Add($opacityLayout)
+  $opacityHost = New-Object System.Windows.Forms.ToolStripControlHost -ArgumentList $opacityPanel
+  $opacityHost.AutoSize = $false
+  $opacityHost.Size = $opacityPanel.Size
+  [void]$opacityMenu.DropDownItems.Add($opacityHost)
+  $opacityMenu.Add_DropDownOpening({ if ($script:UiSettings.compactMode) { Set-MonitorExpanded $false } })
+  [void]$menu.Items.Add($opacityMenu)
   $itemSnap = $menu.Items.Add('贴边吸附')
   $itemSnap.CheckOnClick = $true
   $itemSnap.Checked = [bool]$script:UiSettings.edgeSnap
@@ -1063,7 +1108,7 @@ try {
   $script:PollTimer.Start()
 
   $script:PeriodicTimer = New-Object System.Windows.Forms.Timer
-  $script:PeriodicTimer.Interval = 300000
+  $script:PeriodicTimer.Interval = $script:RefreshIntervalMs
   $script:PeriodicTimer.Add_Tick({ Start-Refresh -Silent })
   $script:PeriodicTimer.Start()
 

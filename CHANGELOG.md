@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2 - 2026-09-17
+
+- Made the compact strip 20% transparent by default, with a persistent 0–60% transparency slider in the right-click menu.
+- Restored full opacity while expanded to keep quota details readable.
+- Changed automatic quota refresh from five minutes to one minute, preserving the no-overlap worker guard.
+- Added native opacity-slider and refresh-interval regression checks.
+
 ## 0.4.1 - 2026-09-17
 
 - Added a compact two-account strip with hover expansion and delayed collapse; dragging and open menus never trigger a size change.

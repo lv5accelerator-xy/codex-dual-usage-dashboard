@@ -2,7 +2,7 @@
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
-title Codex Dual Usage v0.4.1 - Debug Launcher
+title Codex Dual Usage v0.4.2 - Debug Launcher
 
 set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if not exist "%PS%" set "PS=powershell.exe"
