@@ -2,7 +2,22 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.4.0**
+Current version: **v0.4.1**
+
+## v0.4.1: compact mode, edge snapping, optional alerts
+
+The monitor now starts as a **244 × 44 logical-pixel strip**. Each account shows its lowest meaningful remaining quota. Hover to expand the full 5-hour/long-term view; move away for about half a second to collapse. It stays expanded while the detail panel or context menu is open, and never changes size during a drag. Right-click **紧凑模式（悬停展开）** to keep the full monitor visible instead.
+
+**贴边吸附** is enabled by default. Release the monitor within 20 logical pixels of a screen's working-area edge to snap to it. Taskbars and negative-coordinate monitors are supported. A bottom-docked strip expands upward and returns to the same resting position. Drag away to detach, or turn snapping off in the right-click menu.
+
+**低额度通知 → 启用通知** is off by default. Threshold presets are **20% / 10%**, **10% only**, or **30% / 15%**. Notifications identify the account and quota window; clicking a notification opens the detail panel. Windows notification settings / Do Not Disturb may suppress delivery.
+
+- Only fresh, successful reads crossing a threshold can notify. Failed, missing, stale, or already-expired quota data never triggers an alert.
+- The first successful sample after startup, enabling notifications, or changing thresholds establishes a baseline without notifying.
+- Each threshold is notified at most once per account and quota window/reset cycle. Crossing two thresholds in one read produces one message for that window.
+- The deduplication ledger is retained locally in `logs/notification-state.json` across restarts. No credentials are stored in it.
+- A new reset timestamp starts a new cycle. If no timestamp is available, recovery above all configured thresholds rearms alerts. A gap of ten minutes or more establishes a new comparison baseline without notifying.
+- Compact/expanded preference, snapping, resting position, and notification preferences are saved in `ui-settings.json`. Collapsed values marked **!** are stale or unavailable; hover for details.
 
 ## Floating monitor
 
@@ -70,6 +85,7 @@ Quota selection, missing values, stale-data retention, recovery, and account ord
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/ui-model.tests.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/ui-behavior.tests.ps1
 ```
 
 On Windows, exercise the actual WinForms controls, resizing, and failure/loading states with fixture data:
@@ -84,6 +100,7 @@ The smoke test does not start a quota worker, log in, or modify saved UI setting
 
 - `tray.ps1` — floating monitor, detail panel, tray actions, refresh lifecycle
 - `ui-model.ps1` — quota selection and account-specific freshness rules
+- `ui-behavior.ps1` — edge snapping and notification crossing/deduplication rules
 - `ui-controls.cs` — small native WinForms drawing controls compiled by PowerShell at startup
 - `usage-reader.ps1` / `usage-worker.ps1` — existing quota reader and background worker
 - `codex-tools.ps1` / `setup-account.ps1` — CLI discovery and account login
@@ -99,4 +116,4 @@ Authentication stays in the user's local Codex profile directories. Never commit
 
 ## GitHub ZIP downloads
 
-Extract **Code → Download ZIP** completely before running `start.bat`. The launcher normalizes PowerShell encoding for Windows PowerShell 5.1 and checks `tray.ps1` syntax before starting the UI. Keep `ui-controls.cs` and `ui-model.ps1` next to `tray.ps1`.
+Extract **Code → Download ZIP** completely before running `start.bat`. The launcher normalizes PowerShell encoding for Windows PowerShell 5.1 and checks `tray.ps1` syntax before starting the UI. Keep `ui-controls.cs`, `ui-model.ps1`, and `ui-behavior.ps1` next to `tray.ps1`.

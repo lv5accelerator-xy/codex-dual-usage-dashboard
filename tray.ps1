@@ -33,6 +33,14 @@ $script:RefreshError = ''
 $script:RefreshStarted = $null
 $script:UiScale = 1.0
 . (Join-Path $script:Root 'ui-model.ps1')
+. (Join-Path $script:Root 'ui-behavior.ps1')
+$script:AlertState = @{}
+$script:AlertBaselinePending = $true
+$script:AlertStatePath = Join-Path $script:LogDir 'notification-state.json'
+$script:MonitorExpanded = $true
+$script:RestLocation = $null
+$script:PointerLeftAt = $null
+$script:CompactCells = @{}
 
 if (-not (Test-Path -LiteralPath $script:LogDir)) {
   New-Item -ItemType Directory -Force -Path $script:LogDir | Out-Null
@@ -61,7 +69,7 @@ function Show-FatalError {
 }
 
 try {
-  Write-TrayLog '===== v0.4.0 tray starting ====='
+  Write-TrayLog '===== v0.4.1 tray starting ====='
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
   if (-not ('CodexUsage.Surface' -as [type])) {
@@ -187,6 +195,12 @@ try {
       panelHeight = (U 840)
       topMost = $true
       ballVisible = $true
+      compactMode = $true
+      edgeSnap = $true
+      dockHorizontal = 'none'
+      dockVertical = 'none'
+      notificationsEnabled = $false
+      notificationThresholds = @(20,10)
     }
   }
 
@@ -196,7 +210,7 @@ try {
     if (Test-Path -LiteralPath $script:UiSettingsPath) {
       try {
         $loaded = Get-Content -LiteralPath $script:UiSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        foreach ($key in @('ballX','ballY','panelX','panelY','panelWidth','panelHeight','topMost','ballVisible')) {
+        foreach ($key in @('ballX','ballY','panelX','panelY','panelWidth','panelHeight','topMost','ballVisible','compactMode','edgeSnap','dockHorizontal','dockVertical','notificationsEnabled','notificationThresholds')) {
           if ($loaded.PSObject.Properties.Name -contains $key) {
             $settings[$key] = $loaded.$key
           }
@@ -205,6 +219,10 @@ try {
         Write-TrayLog ('UI settings load warning: ' + $_.Exception.Message)
       }
     }
+    if ($settings.dockHorizontal -notin @('none','left','right')) { $settings.dockHorizontal = 'none' }
+    if ($settings.dockVertical -notin @('none','top','bottom')) { $settings.dockVertical = 'none' }
+    $levels = @($settings.notificationThresholds | Where-Object { $_ -match '^\d+$' -and [int]$_ -gt 0 -and [int]$_ -lt 100 } | ForEach-Object { [int]$_ } | Sort-Object -Descending -Unique)
+    $settings.notificationThresholds = if ($levels.Count) { $levels } else { @(20,10) }
     return $settings
   }
 
@@ -212,8 +230,9 @@ try {
     if ($SmokeTest) { return }
     try {
       if ($null -ne $script:Ball) {
-        $script:UiSettings.ballX = $script:Ball.Left
-        $script:UiSettings.ballY = $script:Ball.Top
+        $point = if ($null -ne $script:RestLocation) { $script:RestLocation } else { $script:Ball.Location }
+        $script:UiSettings.ballX = $point.X
+        $script:UiSettings.ballY = $point.Y
         $script:UiSettings.ballVisible = $script:Ball.Visible
       }
       if ($null -ne $script:Popup) {
@@ -256,6 +275,90 @@ try {
     $x = $area.Right - $Width - 24
     $y = [Math]::Max($area.Top + 24, $area.Bottom - $Height - 24)
     return (New-Object System.Drawing.Point -ArgumentList $x,$y)
+  }
+
+  function Remember-MonitorPosition {
+    $x = $script:Ball.Left
+    $y = $script:Ball.Top
+    if ($script:UiSettings.compactMode -and $script:MonitorExpanded -and $script:UiSettings.dockVertical -eq 'bottom') {
+      $y = $script:Ball.Bottom - (U 44)
+    }
+    $script:RestLocation = New-Object System.Drawing.Point -ArgumentList $x,$y
+  }
+
+  function Set-MonitorExpanded {
+    param([bool]$Expanded)
+    if (-not $script:UiSettings.compactMode) { $Expanded = $true }
+    if ($null -eq $script:RestLocation) { Remember-MonitorPosition }
+    $script:Ball.SuspendLayout()
+    try {
+      $script:MonitorExpanded = $Expanded
+      $script:ExpandedGrid.Visible = $Expanded
+      $script:CompactGrid.Visible = -not $Expanded
+      $height = if ($Expanded) { 142 } else { 44 }
+      $script:Ball.Padding = if ($Expanded) {
+        New-Object System.Windows.Forms.Padding -ArgumentList (U 14),(U 10),(U 14),(U 10)
+      } else { New-Object System.Windows.Forms.Padding -ArgumentList (U 12),(U 4),(U 12),(U 4) }
+      $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (U 244),(U $height)
+      $x = $script:RestLocation.X
+      $y = $script:RestLocation.Y
+      if ($Expanded -and $script:UiSettings.compactMode -and $script:UiSettings.dockVertical -eq 'bottom') { $y -= U 98 }
+      $script:Ball.Location = Clamp-Location -X $x -Y $y -Width $script:Ball.Width -Height $script:Ball.Height
+    } finally { $script:Ball.ResumeLayout($true) }
+  }
+
+  function Snap-Monitor {
+    $area = [System.Windows.Forms.Screen]::FromRectangle($script:Ball.Bounds).WorkingArea
+    $position = Get-SnappedPosition -X $script:Ball.Left -Y $script:Ball.Top -Width $script:Ball.Width -Height $script:Ball.Height -Area $area -Distance (U 20) -Enabled ([bool]$script:UiSettings.edgeSnap)
+    $script:Ball.Location = New-Object System.Drawing.Point -ArgumentList $position.x,$position.y
+    $script:UiSettings.dockHorizontal = $position.horizontal
+    $script:UiSettings.dockVertical = $position.vertical
+    Remember-MonitorPosition
+  }
+
+  function Update-MonitorHover {
+    if (-not $script:UiSettings.compactMode -or -not $script:Ball.Visible -or $null -ne $script:BallMouseDown -or $script:MonitorMenu.Visible) { return }
+    $bounds = $script:Ball.Bounds
+    $inside = $bounds.Contains([System.Windows.Forms.Cursor]::Position)
+    if ($inside) {
+      $script:PointerLeftAt = $null
+      if (-not $script:MonitorExpanded) { Set-MonitorExpanded $true }
+    } elseif ($script:MonitorExpanded -and -not $script:Popup.Visible) {
+      if ($null -eq $script:PointerLeftAt) { $script:PointerLeftAt = [DateTimeOffset]::Now }
+      if (([DateTimeOffset]::Now - $script:PointerLeftAt).TotalMilliseconds -ge 450) { Set-MonitorExpanded $false }
+    }
+  }
+
+  function Load-AlertState {
+    if ($SmokeTest -or -not (Test-Path -LiteralPath $script:AlertStatePath)) { return }
+    try {
+      $loaded = Get-Content -LiteralPath $script:AlertStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+      foreach ($property in $loaded.PSObject.Properties) {
+        $entry = $property.Value
+        # Keep the fired-threshold ledger, but establish a fresh baseline per
+        # account/window on the first successful sample after a restart.
+        $entry.value = $null
+        $script:AlertState[$property.Name] = $entry
+      }
+    } catch { Write-TrayLog ('Notification state load warning: ' + $_.Exception.Message) }
+  }
+
+  function Process-QuotaNotifications {
+    param($Data)
+    try {
+      $alerts = @(Get-QuotaAlerts -Data $Data -State $script:AlertState -Thresholds $script:UiSettings.notificationThresholds -Enabled ([bool]$script:UiSettings.notificationsEnabled) -Baseline $script:AlertBaselinePending)
+      $script:AlertBaselinePending = $false
+      if (-not $SmokeTest) {
+        # Persist the deduplication ledger before requesting a Windows notification.
+        $temporary = $script:AlertStatePath + '.tmp'
+        $script:AlertState | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $temporary -Encoding UTF8
+        Move-Item -LiteralPath $temporary -Destination $script:AlertStatePath -Force
+        if ($alerts.Count -gt 0) {
+          $lines = @($alerts | ForEach-Object { '{0} · {1}剩余 {2}' -f $_.label,$_.title,(Format-Percent $_.remaining) })
+          $script:NotifyIcon.ShowBalloonTip(8000,'Codex 低额度提醒',($lines -join "`r`n"),[System.Windows.Forms.ToolTipIcon]::Warning)
+        }
+      }
+    } catch { Write-TrayLog ('Notification warning: ' + $_.Exception.Message) }
   }
 
   function Clear-Content {
@@ -407,15 +510,25 @@ try {
       $cells.long.Text = Format-Percent $pair.longTerm
       $cells.five.ForeColor = Get-ValueColor $pair.fiveHour $stale
       $cells.long.ForeColor = Get-ValueColor $pair.longTerm $stale
-      $cells.name.ForeColor = if ($stale -and $null -ne $Data) { $script:Theme.Warning } else { $script:Theme.TextMuted }
+      $cells.name.ForeColor = if ($stale -and ($null -ne $Data -or -not [string]::IsNullOrEmpty($script:RefreshError))) { $script:Theme.Warning } else { $script:Theme.TextMuted }
       $tip = '长周期显示每周与有效月度额度中，剩余比例较低的一项。'
       $tip += "`r`n当前来源：" + $pair.source
       if ($null -ne $profile.weekly) { $tip += "`r`n每周剩余：" + (Format-Percent $profile.weekly.remainingPercent) }
       if (Test-MeaningfulLimit $profile.individualLimit) { $tip += "`r`n工作空间 / 月度剩余：" + (Format-Percent $profile.individualLimit.remainingPercent) }
-      if ($stale -and $null -ne $Data) { $tip += "`r`n数据未更新，请刷新后确认。" }
+      if ($stale -and ($null -ne $Data -or -not [string]::IsNullOrEmpty($script:RefreshError))) { $tip += "`r`n数据未更新，请刷新后确认。" }
       $script:ToolTip.SetToolTip($cells.long,$tip)
       $script:ToolTip.SetToolTip($cells.five,'5 小时窗口剩余额度。' + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt)))
       $script:ToolTip.SetToolTip($cells.name,([string]$profile.refreshError))
+      if ($script:CompactCells.ContainsKey($id)) {
+        $values = @(@($pair.fiveHour,$pair.longTerm) | Where-Object { $null -ne $_ })
+        $minimum = if ($values.Count) { ($values | Measure-Object -Minimum).Minimum } else { $null }
+        $label = $script:CompactCells[$id]
+        $account = if ($id -eq 'personal') { '个人' } else { '工作' }
+        $mark = if ($stale -and ($null -ne $Data -or -not [string]::IsNullOrEmpty($script:RefreshError))) { ' ! ' } else { ' ' }
+        $label.Text = $account + $mark + (Format-Percent $minimum)
+        $label.ForeColor = if ($stale -and ($null -ne $Data -or -not [string]::IsNullOrEmpty($script:RefreshError))) { $script:Theme.Warning } else { Get-ValueColor $minimum }
+        $script:ToolTip.SetToolTip($label,($account + ' · 最低剩余额度' + "`r`n5 小时：" + (Format-Percent $pair.fiveHour) + "`r`n" + $tip))
+      }
     }
   }
 
@@ -566,6 +679,7 @@ try {
       if (@($payload.data.profiles).Count -eq 0) { throw '未配置账号，请检查 profiles.json。' }
       $script:LastData = Merge-DisplayData -Previous $script:LastData -Incoming $payload.data
       $script:RefreshError = ''
+      Process-QuotaNotifications $payload.data
       Render-Data $script:LastData
       Write-TrayLog 'Refresh result rendered.'
     } catch {
@@ -587,6 +701,7 @@ try {
   function Start-Login {
     param([string]$Account)
     if ($Account -notin @('personal','work')) { return }
+    $script:AlertBaselinePending = $true
     $fileName = if ($Account -eq 'personal') { 'login-personal.bat' } else { 'login-work.bat' }
     $path = Join-Path $script:Root $fileName
     if (-not (Test-Path -LiteralPath $path)) {
@@ -599,6 +714,9 @@ try {
   function Reset-UiPositions {
     $ballLocation = Get-DefaultBallLocation
     $script:Ball.Location = $ballLocation
+    $script:UiSettings.dockHorizontal = 'none'
+    $script:UiSettings.dockVertical = 'none'
+    Remember-MonitorPosition
     $panelLocation = Get-DefaultPanelLocation -Width $script:Popup.Width -Height $script:Popup.Height
     $script:Popup.Location = $panelLocation
     Save-UiSettings
@@ -613,6 +731,7 @@ try {
     try { $script:PeriodicTimer.Stop() } catch {}
     try { $script:InitialTimer.Stop() } catch {}
     try { $script:StatusTimer.Stop() } catch {}
+    try { $script:HoverTimer.Stop() } catch {}
     try { if ($null -ne $script:WorkerProcess -and -not $script:WorkerProcess.HasExited) { $script:WorkerProcess.Kill() } } catch {}
     try { $script:NotifyIcon.Visible = $false; $script:NotifyIcon.Dispose() } catch {}
     try { $script:Popup.Hide(); $script:Popup.Dispose() } catch {}
@@ -624,6 +743,7 @@ try {
   }
 
   $script:UiSettings = Load-UiSettings
+  Load-AlertState
   $script:Popup = New-Object System.Windows.Forms.Form
   $script:Popup.Text = 'Codex 额度'
   $script:Popup.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
@@ -713,9 +833,10 @@ try {
   $script:Ball.BackColor = $script:Theme.BallBack
   $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 14),(U 10),(U 14),(U 10)
   if ($null -ne $script:UiSettings.ballX -and $null -ne $script:UiSettings.ballY) {
-    $ballPoint = Clamp-Location -X ([int]$script:UiSettings.ballX) -Y ([int]$script:UiSettings.ballY) -Width $script:Ball.Width -Height $script:Ball.Height
+    $ballPoint = Clamp-Location -X ([int]$script:UiSettings.ballX) -Y ([int]$script:UiSettings.ballY) -Width $script:Ball.Width -Height $(if ($script:UiSettings.compactMode) { U 44 } else { $script:Ball.Height })
   } else { $ballPoint = Get-DefaultBallLocation }
   $script:Ball.Location = $ballPoint
+  $script:RestLocation = $ballPoint
   $ballGrid = New-Grid -Columns 3
   [void]$ballGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Absolute),([single](U 56))))
   foreach ($unused in 1..2) {
@@ -746,6 +867,22 @@ try {
   $ballGrid.Controls.Add($script:BallStatus,0,3)
   $ballGrid.SetColumnSpan($script:BallStatus,3)
   $script:Ball.Controls.Add($ballGrid)
+  $script:ExpandedGrid = $ballGrid
+  $script:CompactGrid = New-Grid -Columns 2
+  foreach ($unused in 1..2) {
+    [void]$script:CompactGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]50)))
+  }
+  Add-GridRow $script:CompactGrid 36
+  $index = 0
+  foreach ($id in @('personal','work')) {
+    $label = New-Label -Text $(if ($id -eq 'personal') { '个人 —' } else { '工作 —' }) -Size 10 -Bold
+    $label.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $script:CompactCells[$id] = $label
+    $script:CompactGrid.Controls.Add($label,$index,0)
+    $index++
+  }
+  $script:CompactGrid.Visible = $false
+  $script:Ball.Controls.Add($script:CompactGrid)
 
   function Get-ControlTree {
     param($Control)
@@ -757,6 +894,7 @@ try {
   $ballMouseDownHandler = {
     param($sender,$eventArgs)
     if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+      $sender.Capture = $true
       $script:BallMouseDown = [System.Windows.Forms.Cursor]::Position
       $script:BallOrigin = $script:Ball.Location
       $script:BallDragged = $false
@@ -778,8 +916,7 @@ try {
     param($sender,$eventArgs)
     if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
       if ($script:BallDragged) {
-        $safePoint = Clamp-Location -X $script:Ball.Left -Y $script:Ball.Top -Width $script:Ball.Width -Height $script:Ball.Height
-        $script:Ball.Location = $safePoint
+        Snap-Monitor
         Save-UiSettings
       } else {
         Toggle-Popup
@@ -787,6 +924,7 @@ try {
       $script:BallMouseDown = $null
       $script:BallOrigin = $null
       $script:BallDragged = $false
+      $sender.Capture = $false
     }
   }
 
@@ -797,6 +935,54 @@ try {
   }
 
   $menu = New-Object System.Windows.Forms.ContextMenuStrip
+  $script:MonitorMenu = $menu
+  $itemCompact = $menu.Items.Add('紧凑模式（悬停展开）')
+  $itemCompact.CheckOnClick = $true
+  $itemCompact.Checked = [bool]$script:UiSettings.compactMode
+  $itemCompact.Add_Click({
+    $script:UiSettings.compactMode = $itemCompact.Checked
+    Remember-MonitorPosition
+    Set-MonitorExpanded (-not $itemCompact.Checked)
+    Remember-MonitorPosition
+    Save-UiSettings
+  })
+  $itemSnap = $menu.Items.Add('贴边吸附')
+  $itemSnap.CheckOnClick = $true
+  $itemSnap.Checked = [bool]$script:UiSettings.edgeSnap
+  $itemSnap.Add_Click({
+    $script:UiSettings.edgeSnap = $itemSnap.Checked
+    Snap-Monitor
+    Save-UiSettings
+  })
+  $notificationsMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+  $notificationsMenu.Text = '低额度通知'
+  $itemNotifications = $notificationsMenu.DropDownItems.Add('启用通知')
+  $itemNotifications.CheckOnClick = $true
+  $itemNotifications.Checked = [bool]$script:UiSettings.notificationsEnabled
+  $itemNotifications.Add_Click({
+    $script:UiSettings.notificationsEnabled = $itemNotifications.Checked
+    $script:AlertBaselinePending = $true
+    foreach ($entry in $script:AlertState.Values) { $entry.value = $null }
+    Save-UiSettings
+  })
+  [void]$notificationsMenu.DropDownItems.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+  $script:ThresholdItems = @()
+  foreach ($preset in @(@{ text = '剩余 20% / 10%'; levels = @(20,10) },@{ text = '仅剩余 10%'; levels = @(10) },@{ text = '剩余 30% / 15%'; levels = @(30,15) })) {
+    $item = $notificationsMenu.DropDownItems.Add($preset.text)
+    $item.Tag = $preset.levels
+    $item.Checked = (($script:UiSettings.notificationThresholds -join ',') -eq ($preset.levels -join ','))
+    $item.Add_Click({
+      param($sender,$eventArgs)
+      $script:UiSettings.notificationThresholds = @($sender.Tag)
+      foreach ($choice in $script:ThresholdItems) { $choice.Checked = $choice -eq $sender }
+      $script:AlertBaselinePending = $true
+      foreach ($entry in $script:AlertState.Values) { $entry.value = $null }
+      Save-UiSettings
+    })
+    $script:ThresholdItems += $item
+  }
+  [void]$menu.Items.Add($notificationsMenu)
+  [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
   $itemToggle = $menu.Items.Add('展开 / 收起额度面板')
   $itemRefresh = $menu.Items.Add('立即刷新')
   $itemBallVisible = $menu.Items.Add('显示悬浮面板')
@@ -849,15 +1035,23 @@ try {
   })
   $script:NotifyIcon.Visible = -not $SmokeTest
 
+  Set-MonitorExpanded (-not [bool]$script:UiSettings.compactMode)
+  $script:NotifyIcon.Add_BalloonTipClicked({ $script:Popup.Show(); $script:Popup.Activate() })
+
   if ([bool]$script:UiSettings.ballVisible -and -not $SmokeTest) { $script:Ball.Show() }
 
   if ($SmokeTest) {
+    Set-MonitorExpanded $true
     . (Join-Path $script:Root 'tests\ui-smoke.ps1')
     Exit-App
     return
   }
 
   Show-Loading
+  $script:HoverTimer = New-Object System.Windows.Forms.Timer
+  $script:HoverTimer.Interval = 150
+  $script:HoverTimer.Add_Tick({ Update-MonitorHover })
+  $script:HoverTimer.Start()
   $script:StatusTimer = New-Object System.Windows.Forms.Timer
   $script:StatusTimer.Interval = 30000
   $script:StatusTimer.Add_Tick({ Update-Status })

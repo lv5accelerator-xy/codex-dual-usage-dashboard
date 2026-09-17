@@ -63,10 +63,65 @@ foreach ($entry in @(@{ form = $script:Popup; name = 'detail.png' },@{ form = $s
     $bitmap.Save((Join-Path $outputDir $entry.name),[System.Drawing.Imaging.ImageFormat]::Png)
   } finally { $bitmap.Dispose() }
 }
+# Compact presentation and anchor geometry use real native controls.
+Assert-Ui (-not $script:UiSettings.notificationsEnabled) 'Notifications must be off by default.'
+Set-MonitorExpanded $false
+[System.Windows.Forms.Application]::DoEvents()
+Assert-Ui ($script:Ball.Height -eq (U 44)) 'Compact mode must be a narrow strip.'
+Assert-Ui ($script:CompactGrid.Visible -and -not $script:ExpandedGrid.Visible) 'Only the compact grid should be visible.'
+Assert-Ui ($script:CompactCells.personal.Text -eq '个人 95%') 'Compact value is the account minimum, not a sum.'
+Assert-Ui ($script:CompactCells.work.Text -eq '工作 21%') 'Compact mode preserves independent account values.'
+$bitmap = New-Object System.Drawing.Bitmap -ArgumentList $script:Ball.Width,$script:Ball.Height
+try {
+  $bounds = New-Object System.Drawing.Rectangle -ArgumentList 0,0,$script:Ball.Width,$script:Ball.Height
+  $script:Ball.DrawToBitmap($bitmap,$bounds)
+  $bitmap.Save((Join-Path $outputDir 'compact.png'),[System.Drawing.Imaging.ImageFormat]::Png)
+} finally { $bitmap.Dispose() }
+$area = [System.Windows.Forms.Screen]::FromRectangle($script:Ball.Bounds).WorkingArea
+$script:Ball.Location = New-Object System.Drawing.Point -ArgumentList ($area.Right - $script:Ball.Width - (U 8)),($area.Bottom - $script:Ball.Height - (U 8))
+Snap-Monitor
+Assert-Ui ($script:Ball.Right -eq $area.Right -and $script:Ball.Bottom -eq $area.Bottom) 'Drop near a corner must snap to the working area.'
+$rest = $script:RestLocation
+Set-MonitorExpanded $true
+Assert-Ui ($script:Ball.Bottom -eq $area.Bottom) 'Bottom-docked hover expansion must grow upward.'
+Set-MonitorExpanded $false
+Assert-Ui ($script:Ball.Location -eq $rest) 'Collapsing must restore the exact resting position.'
+$script:Popup.Hide()
+$cursorBefore = [System.Windows.Forms.Cursor]::Position
+try {
+  [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point -ArgumentList ($script:Ball.Left + (U 20)),($script:Ball.Top + (U 20))
+  Update-MonitorHover
+  Assert-Ui $script:MonitorExpanded 'Hover must expand the compact strip.'
+  [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point -ArgumentList ($area.Left + 2),($area.Top + 2)
+  $script:PointerLeftAt = [DateTimeOffset]::Now.AddSeconds(-1)
+  Update-MonitorHover
+  Assert-Ui (-not $script:MonitorExpanded) 'Leaving the strip must collapse it after the delay.'
+  $script:BallMouseDown = New-Object System.Drawing.Point -ArgumentList 0,0
+  [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point -ArgumentList ($script:Ball.Left + (U 20)),($script:Ball.Top + (U 20))
+  Update-MonitorHover
+  Assert-Ui (-not $script:MonitorExpanded) 'Hover must not resize the window during a drag.'
+} finally {
+  $script:BallMouseDown = $null
+  [System.Windows.Forms.Cursor]::Position = $cursorBefore
+}
+$itemCompact.PerformClick()
+Assert-Ui ($script:MonitorExpanded -and -not $script:UiSettings.compactMode) 'Disabling compact mode keeps the full panel open.'
+$itemCompact.PerformClick()
+Assert-Ui (-not $script:MonitorExpanded -and $script:UiSettings.compactMode) 'Re-enabling compact mode restores the narrow strip.'
+$itemNotifications.PerformClick()
+Assert-Ui ($script:UiSettings.notificationsEnabled -and $script:AlertBaselinePending) 'Enabling alerts requires a new baseline.'
+$script:ThresholdItems[1].PerformClick()
+Assert-Ui (($script:UiSettings.notificationThresholds -join ',') -eq '10') 'Notification threshold presets must update settings.'
+Assert-Ui (@($script:ThresholdItems | Where-Object { $_.Checked }).Count -eq 1) 'Exactly one notification preset is selected.'
+$itemNotifications.PerformClick()
+$script:Popup.Show()
+Set-MonitorExpanded $true
+
 Render-Error 'Fixture: offline'
 Assert-Ui ($script:ContentPanel.Controls.Count -eq 2) 'Failed refresh must keep the existing cards.'
 Assert-Ui ($script:BallCells.personal.five.Text -eq '100%') 'Failed refresh must keep last successful data.'
 Assert-Ui ($script:BallStatus.Text -match '未更新') 'Floating panel must mark stale data.'
+Assert-Ui ($script:CompactCells.personal.Text -match '!') 'Compact mode must also mark retained data as stale.'
 $script:RefreshError = ''
 $sample.profiles[1] = [pscustomobject]@{ id = 'work'; label = '工作账号'; ok = $false; error = 'Fixture: login expired' }
 $script:LastData = Merge-DisplayData $script:LastData $sample

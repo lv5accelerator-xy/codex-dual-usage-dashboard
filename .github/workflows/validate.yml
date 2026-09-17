@@ -25,7 +25,9 @@ jobs:
           }
       - name: Check quota and stale-data behavior
         shell: powershell
-        run: ./tests/ui-model.tests.ps1
+        run: |
+          ./tests/ui-model.tests.ps1
+          ./tests/ui-behavior.tests.ps1
       - name: Render native UI and exercise resize and failure states
         shell: powershell
         run: ./tray.ps1 -SmokeTest

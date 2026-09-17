@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1 - 2026-09-17
+
+- Added a compact two-account strip with hover expansion and delayed collapse; dragging and open menus never trigger a size change.
+- Added optional edge snapping within 20 logical pixels of each monitor's working area, with stable bottom-edge expansion and persistent resting positions.
+- Added opt-in Windows low-quota notifications with 20/10, 10-only, and 30/15 percent threshold presets.
+- Notifications use only fresh successful reads, establish silent initial baselines, coalesce threshold crossings, and persist per-account/window/reset-cycle deduplication across restarts.
+- Added regression coverage for negative monitor coordinates, stale/failed/missing data, threshold crossing, reset cycles, and JSON-restored notification state.
+- Extended Windows native smoke tests for compact rendering, hover, drag guards, edge anchoring, and notification menu preferences.
+
 ## 0.4.0 - 2026-09-16
 
 - Replaced the crowded circular monitor with a rounded, DPI-scaled two-account panel with aligned 5-hour and long-term quota columns.
