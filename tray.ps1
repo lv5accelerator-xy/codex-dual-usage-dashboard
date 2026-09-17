@@ -46,6 +46,7 @@ $script:MonitorExpanded = $true
 $script:RestLocation = $null
 $script:PointerLeftAt = $null
 $script:CompactCells = @{}
+$script:CompactRecovery = @{}
 
 if (-not (Test-Path -LiteralPath $script:LogDir)) {
   New-Item -ItemType Directory -Force -Path $script:LogDir | Out-Null
@@ -74,7 +75,7 @@ function Show-FatalError {
 }
 
 try {
-  Write-TrayLog '===== v0.5.1 tray starting ====='
+  Write-TrayLog '===== v0.5.2 tray starting ====='
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
   if (-not ('CodexUsage.Surface' -as [type])) {
@@ -293,7 +294,7 @@ try {
     $x = $script:Ball.Left
     $y = $script:Ball.Top
     if ($script:UiSettings.compactMode -and $script:MonitorExpanded -and $script:UiSettings.dockVertical -eq 'bottom') {
-      $y = $script:Ball.Bottom - (U 44)
+      $y = $script:Ball.Bottom - (U 64)
     }
     $script:RestLocation = New-Object System.Drawing.Point -ArgumentList $x,$y
   }
@@ -314,14 +315,14 @@ try {
       Update-MonitorOpacity
       $script:ExpandedGrid.Visible = $Expanded
       $script:CompactGrid.Visible = -not $Expanded
-      $height = if ($Expanded) { 142 } else { 44 }
+      $height = if ($Expanded) { 142 } else { 64 }
       $script:Ball.Padding = if ($Expanded) {
         New-Object System.Windows.Forms.Padding -ArgumentList (U 14),(U 10),(U 14),(U 10)
       } else { New-Object System.Windows.Forms.Padding -ArgumentList (U 12),(U 4),(U 12),(U 4) }
-      $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (U 244),(U $height)
+      $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (U 320),(U $height)
       $x = $script:RestLocation.X
       $y = $script:RestLocation.Y
-      if ($Expanded -and $script:UiSettings.compactMode -and $script:UiSettings.dockVertical -eq 'bottom') { $y -= U 98 }
+      if ($Expanded -and $script:UiSettings.compactMode -and $script:UiSettings.dockVertical -eq 'bottom') { $y -= U 78 }
       $script:Ball.Location = Clamp-Location -X $x -Y $y -Width $script:Ball.Width -Height $script:Ball.Height
     } finally { $script:Ball.ResumeLayout($true) }
   }
@@ -544,9 +545,13 @@ try {
         $label = $script:CompactCells[$id]
         $account = if ($id -eq 'personal') { '个人' } else { '工作' }
         $mark = if ($stale -and ($null -ne $Data -or -not [string]::IsNullOrEmpty($script:RefreshError))) { ' ! ' } else { ' ' }
-        $label.Text = $account + $mark + (Format-Percent $minimum)
+        $label.Text = $account + $mark + (Format-CompactPercent $pair.fiveHour) + ' / ' + (Format-CompactPercent $pair.longTerm)
+        $recovery = $script:CompactRecovery[$id]
+        $recovery.Text = Get-CompactRecovery $profile.fiveHour $stale
+        $recovery.ForeColor = if ($null -ne $pair.fiveHour -and [double]$pair.fiveHour -eq 0 -and -not $stale) { $script:Theme.Warning } else { $script:Theme.TextMuted }
         $label.ForeColor = if ($stale -and ($null -ne $Data -or -not [string]::IsNullOrEmpty($script:RefreshError))) { $script:Theme.Warning } else { Get-ValueColor $minimum }
-        $script:ToolTip.SetToolTip($label,($account + ' · 最低剩余额度' + "`r`n5 小时：" + (Format-Percent $pair.fiveHour) + "`r`n" + $tip))
+        $script:ToolTip.SetToolTip($label,($account + ' · 5h / 总量剩余（总量指长周期额度）' + "`r`n5 小时：" + (Format-Percent $pair.fiveHour) + "`r`n" + $tip))
+        $script:ToolTip.SetToolTip($recovery,('5 小时额度用尽时显示本机时间；以实际刷新结果为准。' + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt))))
       }
     }
   }
@@ -875,11 +880,11 @@ try {
   $script:Ball.ShowInTaskbar = $false
   $script:Ball.TopMost = [bool]$script:UiSettings.topMost
   $script:Ball.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-  $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (U 244),(U 142)
+  $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (U 320),(U 142)
   $script:Ball.BackColor = $script:Theme.BallBack
   $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 14),(U 10),(U 14),(U 10)
   if ($null -ne $script:UiSettings.ballX -and $null -ne $script:UiSettings.ballY) {
-    $ballPoint = Clamp-Location -X ([int]$script:UiSettings.ballX) -Y ([int]$script:UiSettings.ballY) -Width $script:Ball.Width -Height $(if ($script:UiSettings.compactMode) { U 44 } else { $script:Ball.Height })
+    $ballPoint = Clamp-Location -X ([int]$script:UiSettings.ballX) -Y ([int]$script:UiSettings.ballY) -Width $script:Ball.Width -Height $(if ($script:UiSettings.compactMode) { U 64 } else { $script:Ball.Height })
   } else { $ballPoint = Get-DefaultBallLocation }
   $script:Ball.Location = $ballPoint
   $script:RestLocation = $ballPoint
@@ -918,13 +923,18 @@ try {
   foreach ($unused in 1..2) {
     [void]$script:CompactGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle -ArgumentList ([System.Windows.Forms.SizeType]::Percent),([single]50)))
   }
-  Add-GridRow $script:CompactGrid 36
+  Add-GridRow $script:CompactGrid 30
+  Add-GridRow $script:CompactGrid 22
   $index = 0
   foreach ($id in @('personal','work')) {
     $label = New-Label -Text $(if ($id -eq 'personal') { '个人 —' } else { '工作 —' }) -Size 10 -Bold
     $label.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
     $script:CompactCells[$id] = $label
     $script:CompactGrid.Controls.Add($label,$index,0)
+    $recovery = New-Label -Text '5h / 总量 · 剩余' -Size 8 -Muted
+    $recovery.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $script:CompactRecovery[$id] = $recovery
+    $script:CompactGrid.Controls.Add($recovery,$index,1)
     $index++
   }
   $script:CompactGrid.Visible = $false

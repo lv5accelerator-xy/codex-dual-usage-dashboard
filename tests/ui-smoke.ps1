@@ -67,7 +67,7 @@ foreach ($entry in @(@{ form = $script:Popup; name = 'detail.png' },@{ form = $s
 Assert-Ui (-not $script:UiSettings.notificationsEnabled) 'Notifications must be off by default.'
 Set-MonitorExpanded $false
 [System.Windows.Forms.Application]::DoEvents()
-Assert-Ui ($script:Ball.Height -eq (U 44)) 'Compact mode must be a narrow strip.'
+Assert-Ui ($script:Ball.Height -eq (U 64)) 'Compact mode must be a narrow strip.'
 Assert-Ui ([Math]::Abs($script:Ball.Opacity - 0.8) -lt 0.01) 'Compact mode starts at 20 percent transparency.'
 $script:OpacitySlider.Value = 45
 Assert-Ui ($script:UiSettings.compactOpacity -eq 55) 'Slider updates the persisted opacity preference.'
@@ -84,14 +84,28 @@ $script:OpacitySlider.Value = 20
 Assert-Ui ($script:RefreshIntervalMs -eq 60000) 'Automatic refresh runs every minute.'
 
 Assert-Ui ($script:CompactGrid.Visible -and -not $script:ExpandedGrid.Visible) 'Only the compact grid should be visible.'
-Assert-Ui ($script:CompactCells.personal.Text -eq '个人 95%') 'Compact value is the account minimum, not a sum.'
-Assert-Ui ($script:CompactCells.work.Text -eq '工作 21%') 'Compact mode preserves independent account values.'
+Assert-Ui ($script:CompactCells.personal.Text -eq '个人 100% / 95%') 'Compact mode shows independent 5-hour and total percentages.'
+Assert-Ui ($script:CompactCells.work.Text -eq '工作 49% / 21%') 'Compact mode preserves independent account values.'
 $bitmap = New-Object System.Drawing.Bitmap -ArgumentList $script:Ball.Width,$script:Ball.Height
 try {
   $bounds = New-Object System.Drawing.Rectangle -ArgumentList 0,0,$script:Ball.Width,$script:Ball.Height
   $script:Ball.DrawToBitmap($bitmap,$bounds)
   $bitmap.Save((Join-Path $outputDir 'compact.png'),[System.Drawing.Imaging.ImageFormat]::Png)
 } finally { $bitmap.Dispose() }
+$savedFive = $script:LastData.profiles[1].fiveHour.remainingPercent
+$script:LastData.profiles[1].fiveHour.remainingPercent = 0
+Update-BallSummary $script:LastData
+Assert-Ui ($script:CompactCells.work.Text -eq '工作 0% / 21%') 'Zero 5-hour quota keeps the independent total visible.'
+Assert-Ui ($script:CompactRecovery.work.Text -match '恢复') 'Exhausted account shows recovery in the compact window.'
+[System.Windows.Forms.Application]::DoEvents()
+$bitmap = New-Object System.Drawing.Bitmap -ArgumentList $script:Ball.Width,$script:Ball.Height
+try {
+  $bounds = New-Object System.Drawing.Rectangle -ArgumentList 0,0,$script:Ball.Width,$script:Ball.Height
+  $script:Ball.DrawToBitmap($bitmap,$bounds)
+  $bitmap.Save((Join-Path $outputDir 'compact-exhausted.png'),[System.Drawing.Imaging.ImageFormat]::Png)
+} finally { $bitmap.Dispose() }
+$script:LastData.profiles[1].fiveHour.remainingPercent = $savedFive
+Update-BallSummary $script:LastData
 $area = [System.Windows.Forms.Screen]::FromRectangle($script:Ball.Bounds).WorkingArea
 $script:Ball.Location = New-Object System.Drawing.Point -ArgumentList ($area.Right - $script:Ball.Width - (U 8)),($area.Bottom - $script:Ball.Height - (U 8))
 Snap-Monitor

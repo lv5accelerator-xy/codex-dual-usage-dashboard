@@ -2,7 +2,7 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.5.1**
+Current version: **v0.5.2**
 
 ## Windows EXE client (recommended)
 
@@ -50,7 +50,7 @@ Automatic quota refresh now runs every **60 seconds**. If a read is still runnin
 
 ## v0.4.1: compact mode, edge snapping, optional alerts
 
-The monitor now starts as a **244 × 44 logical-pixel strip**. Each account shows its lowest meaningful remaining quota. Hover to expand the full 5-hour/long-term view; move away for about half a second to collapse. It stays expanded while the detail panel or context menu is open, and never changes size during a drag. Right-click **紧凑模式（悬停展开）** to keep the full monitor visible instead.
+The monitor now starts as a **320 × 64 logical-pixel strip**. Each account shows **5h remaining / total remaining** as two independent percentages. “Total” means the limiting long-term quota (weekly or meaningful monthly/workspace quota), not the sum of windows. When 5h reaches zero, the second line shows its recovery time in the local time zone, including a day label when needed. Missing reset times remain unknown; expired reset times wait for a fresh reading; stale data asks for confirmation. Hover to expand the full 5-hour/long-term view; move away for about half a second to collapse. It stays expanded while the detail panel or context menu is open, and never changes size during a drag. Right-click **紧凑模式（悬停展开）** to keep the full monitor visible instead.
 
 **贴边吸附** is enabled by default. Release the monitor within 20 logical pixels of a screen's working-area edge to snap to it. Taskbars and negative-coordinate monitors are supported. A bottom-docked strip expands upward and returns to the same resting position. Drag away to detach, or turn snapping off in the right-click menu.
 

@@ -60,4 +60,23 @@ Assert-Equal (Test-ProfileStale $personal) $true 'Data expires even without an e
 $personal.fetchedAt = 'invalid'
 Assert-Equal (Test-ProfileStale $personal) $true 'Invalid timestamp is not considered fresh'
 Assert-Equal (Get-ResetText ([DateTimeOffset]::Now.AddMinutes(-1).ToString('o'))) '等待额度更新' 'Expired countdown does not claim a successful reset'
+$now = [DateTimeOffset]::Now.Date.AddHours(12)
+$now = [DateTimeOffset]$now
+$zero = [pscustomobject]@{ remainingPercent = 0; resetsAt = $now.AddHours(2).ToString('o') }
+Assert-Equal (Get-CompactRecovery $zero $false $now) '5h 14:00 恢复' 'Exhausted quota shows local recovery time'
+Assert-Equal (Get-CompactRecovery $zero $true $now) '5h 恢复时间待确认' 'Stale zero does not promise a recovery time'
+$zero.resetsAt = $now.AddHours(14).ToString('o')
+Assert-Equal (Get-CompactRecovery $zero $false $now) '明天 02:00 恢复' 'Recovery after midnight has a day label'
+$zero.resetsAt = $now.AddMinutes(-1).ToString('o')
+Assert-Equal (Get-CompactRecovery $zero $false $now) '5h 等待刷新确认' 'Expired reset does not invent replenishment'
+$zero.resetsAt = 'invalid'
+Assert-Equal (Get-CompactRecovery $zero $false $now) '5h 恢复时间未知' 'Malformed reset remains unknown'
+$zero.resetsAt = $null
+Assert-Equal (Get-CompactRecovery $zero $false $now) '5h 恢复时间未知' 'Absent reset remains unknown'
+$zero.resetsAt = $now.AddHours(1).UtcDateTime
+Assert-Equal (Get-CompactRecovery $zero $false $now) '5h 13:00 恢复' 'Typed JSON DateTime preserves time zone'
+$zero.remainingPercent = 0.4
+Assert-Equal (Get-CompactRecovery $zero $false $now) '5h / 总量 · 剩余' 'Positive fraction is not exhausted'
+Assert-Equal (Format-CompactPercent 0.4) '<1%' 'Small positive quota does not display zero'
+Assert-Equal (Get-CompactRecovery $null $false $now) '5h / 总量 · 剩余' 'Missing quota is not exhausted'
 Write-Output "UI model: $script:Checks checks passed."

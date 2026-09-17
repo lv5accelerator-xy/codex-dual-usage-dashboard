@@ -79,3 +79,28 @@ function Get-ResetText {
     return ('{0}分钟后重置' -f [Math]::Max(1, [Math]::Ceiling($span.TotalMinutes)))
   } catch { return '未提供重置时间' }
 }
+
+# A compact pair is two independent remaining percentages, never a ratio or sum.
+function Format-CompactPercent {
+  param($Value)
+  if ($null -ne $Value -and [double]$Value -gt 0 -and [double]$Value -lt 1) { return '<1%' }
+  return Format-Percent $Value
+}
+
+function Get-CompactRecovery {
+  param($FiveHour,[bool]$Stale = $false,[DateTimeOffset]$Now = [DateTimeOffset]::Now)
+  if ($null -eq $FiveHour -or $null -eq $FiveHour.remainingPercent -or [double]$FiveHour.remainingPercent -ne 0) { return '5h / 总量 · 剩余' }
+  if ($Stale) { return '5h 恢复时间待确认' }
+  try {
+    $raw = $FiveHour.resetsAt
+    if ($null -eq $raw -or [string]::IsNullOrWhiteSpace([string]$raw)) { return '5h 恢复时间未知' }
+    $reset = if ($raw -is [DateTimeOffset]) { $raw } elseif ($raw -is [DateTime]) { [DateTimeOffset]$raw } else { [DateTimeOffset]::Parse([string]$raw) }
+    if ($reset -le $Now) { return '5h 等待刷新确认' }
+    $local = $reset.ToLocalTime()
+    $today = $Now.ToLocalTime().Date
+    $clock = $local.ToString('HH:mm')
+    if ($local.Date -eq $today) { return ('5h {0} 恢复' -f $clock) }
+    if ($local.Date -eq $today.AddDays(1)) { return ('明天 {0} 恢复' -f $clock) }
+    return ($local.ToString('MM-dd HH:mm') + ' 恢复')
+  } catch { return '5h 恢复时间未知' }
+}
