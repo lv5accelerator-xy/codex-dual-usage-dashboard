@@ -2,7 +2,35 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.4.2**
+Current version: **v0.5.0**
+
+## Windows EXE client (recommended)
+
+[Download the latest CodexUsage.exe](https://github.com/lv5accelerator-xy/codex-dual-usage-dashboard/releases/latest/download/CodexUsage.exe)
+
+Double-click the EXE. It installs into `%LOCALAPPDATA%\CodexUsage` and creates desktop and Start menu shortcuts without administrator permissions. The client uses Windows .NET Framework 4.8 / Windows PowerShell 5.1; it does not require a separate .NET 8 or Electron runtime. The existing quota reader remains embedded inside the EXE.
+
+**Upgrading from the script version:** quit the old tray app, put the EXE in the old app folder, and run it once. If present, `ui-settings.json` and `profiles.json` are copied into the client's separate data directory. Existing `.codex-personal` / `.codex-work` login credentials stay where they are; no credentials are bundled or uploaded.
+
+### Automatic client updates
+
+- Checks the repository's latest stable GitHub Release after startup and every six hours. This is background polling, not server push.
+- Downloads newer versions automatically and verifies the size, SHA-256 checksum, and embedded executable version.
+- Right-click **客户端更新 → 重启并更新** to apply a downloaded update immediately. Normal exit also installs it; the next launch uses the new version.
+- Right-click **客户端更新 → 立即检查更新** to check manually.
+- Installation uses an atomic file replacement and retains the previous EXE. A failed post-update UI startup attempts to restore the previous version.
+- Account configuration, UI preferences and notification history are kept under `%LOCALAPPDATA%\CodexUsage\data`, outside the versioned program files. They survive updates.
+- If offline or a download fails verification, the running version remains available. Client logs are in `%LOCALAPPDATA%\CodexUsage\client.log`.
+
+The release EXE is **unsigned**; Windows may show a publisher/reputation prompt. SHA-256 checks provide download integrity, not publisher signing. Notifications remain subject to Windows notification settings.
+
+### Building and releasing
+
+Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File desktop/build.ps1` on Windows to create `dist/CodexUsage.exe` and `dist/update.json`.
+
+GitHub Actions validates the source UI, builds the EXE, runs the packaged UI plus migration/integrity tests, and publishes a GitHub Release when `VERSION` is new. Published version assets are immutable: increment `VERSION` for each release. No developer API key or signing secret is required for the current unsigned build.
+
+[Icon design and source assets](assets/README.md)
 
 ## v0.4.2: adjustable compact transparency and one-minute refresh
 
@@ -81,7 +109,7 @@ Run `first-run-setup.bat` to set up and log in two independent Codex homes:
 - Personal: `%USERPROFILE%\.codex-personal`
 - Work: `%USERPROFILE%\.codex-work`
 
-Run `start.bat` normally, or `start-debug.bat` for startup diagnostics. Quit the existing tray instance before starting an updated version.
+For the source/script distribution, run `start.bat` normally, or `start-debug.bat` for startup diagnostics. Script mode does not install automatic client updates. Quit the existing tray instance before starting an updated version.
 
 If startup fails, check `logs/startup.log`, `logs/startup-error.log`, `logs/tray.log`, and `logs/worker.log`.
 

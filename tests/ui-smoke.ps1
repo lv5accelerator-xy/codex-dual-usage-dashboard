@@ -150,3 +150,16 @@ $script:RefreshError = ''
 Show-Loading
 Assert-Ui ($script:ContentPanel.Controls.Count -eq 2) 'Initial loading must retain stable account layout.'
 Write-Output 'Windows UI smoke test passed; fixture screenshots saved to artifacts/.'
+
+if ($env:CODEX_USAGE_CLIENT_VERSION) {
+  Assert-Ui ($script:DataRoot -ne $script:Root) 'EXE mode must separate user data from versioned application files.'
+  @{ state = 'ready'; version = '99.0.0'; message = 'Fixture update ready' } | ConvertTo-Json | Set-Content $script:ClientStatusPath -Encoding UTF8
+  Update-ClientStatus
+  Assert-Ui $script:RestartUpdateItem.Available 'Downloaded update exposes the restart action.'
+  Assert-Ui (-not $script:CheckUpdateItem.Enabled) 'Ready updates cannot start overlapping checks.'
+  @{ state = 'error'; version = '99.0.0'; message = 'Fixture offline' } | ConvertTo-Json | Set-Content $script:ClientStatusPath -Encoding UTF8
+  Update-ClientStatus
+  Assert-Ui (-not $script:RestartUpdateItem.Available) 'Failed checks cannot expose installation actions.'
+  Assert-Ui $script:CheckUpdateItem.Enabled 'Failed checks allow manual retry.'
+  Remove-Item $script:ClientStatusPath -Force
+}

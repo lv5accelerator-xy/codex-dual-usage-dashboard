@@ -1,4 +1,4 @@
-param(
+﻿param(
   [Parameter(Mandatory = $true)][string]$OutputPath,
   [Parameter(Mandatory = $true)][string]$LogPath
 )
@@ -24,11 +24,12 @@ try {
 
   $codexPath = Find-CodexCommand
   if ([string]::IsNullOrWhiteSpace([string]$codexPath)) {
-    throw '未找到 Codex CLI。请先运行 first-run-setup.bat 完成安装和账号登录。'
+    throw '未找到 Codex CLI。请在右键菜单中选择账号登录，完成安装和授权。'
   }
   Write-WorkerLog ('Codex path: ' + $codexPath)
 
-  $configPath = Join-Path $root 'profiles.json'
+  $dataRoot = if ([string]::IsNullOrWhiteSpace($env:CODEX_USAGE_DATA_DIR)) { $root } else { $env:CODEX_USAGE_DATA_DIR }
+  $configPath = Join-Path $dataRoot 'profiles.json'
   $data = Get-CodexUsageAllProfiles -ConfigPath $configPath -CodexPath $codexPath
   $payload = [pscustomobject]@{
     ok = $true

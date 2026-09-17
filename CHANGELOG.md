@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 - 2026-09-17
+
+- Added a single Windows EXE with an embedded UI payload, per-user installation, and desktop/Start menu shortcuts.
+- Added background stable-release checks, automatic verified downloads, restart-to-update actions, exit-time installation, and a previous-version rollback copy.
+- Separated client data from versioned application files and migrated adjacent legacy settings/account configuration on first install.
+- Added the dual lavender/mint quota icon to the EXE, shortcuts, window, and system tray.
+- Added Windows client build, packaged native UI testing, update integrity/migration tests, and automated versioned GitHub Releases.
+
 ## 0.4.2 - 2026-09-17
 
 - Made the compact strip 20% transparent by default, with a persistent 0–60% transparency slider in the right-click menu.

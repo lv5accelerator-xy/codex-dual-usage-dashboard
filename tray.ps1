@@ -3,11 +3,15 @@
 $ErrorActionPreference = 'Stop'
 
 $script:Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$script:LogDir = Join-Path $script:Root 'logs'
+$script:DataRoot = if ([string]::IsNullOrWhiteSpace($env:CODEX_USAGE_DATA_DIR)) { $script:Root } else { $env:CODEX_USAGE_DATA_DIR }
+$script:LogDir = Join-Path $script:DataRoot 'logs'
+$script:ClientStatusPath = Join-Path $script:DataRoot 'client-status.json'
+$script:LastClientStatus = ''
+$script:ClientUpdateNotified = ''
 $script:TrayLog = Join-Path $script:LogDir 'tray.log'
 $script:WorkerLog = Join-Path $script:LogDir 'worker.log'
 $script:CachePath = Join-Path $script:LogDir 'usage-result.json'
-$script:UiSettingsPath = Join-Path $script:Root 'ui-settings.json'
+$script:UiSettingsPath = Join-Path $script:DataRoot 'ui-settings.json'
 $script:WorkerProcess = $null
 $script:RefreshPending = $false
 $script:LastData = $null
@@ -70,7 +74,7 @@ function Show-FatalError {
 }
 
 try {
-  Write-TrayLog '===== v0.4.2 tray starting ====='
+  Write-TrayLog '===== v0.5.0 tray starting ====='
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
   if (-not ('CodexUsage.Surface' -as [type])) {
@@ -609,7 +613,7 @@ try {
   }
 
   function Show-Loading {
-    $config = Get-Content -LiteralPath (Join-Path $script:Root 'profiles.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $config = Get-Content -LiteralPath (Join-Path $script:DataRoot 'profiles.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $pending = @()
     foreach ($profile in $config.profiles) {
       $pending += [pscustomobject]@{ id = $profile.id; label = $profile.label; ok = $true; planType = '等待读取' }
@@ -621,7 +625,7 @@ try {
     param([string]$Message)
     $script:RefreshError = $Message
     if ($null -eq $script:LastData) {
-      $config = Get-Content -LiteralPath (Join-Path $script:Root 'profiles.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+      $config = Get-Content -LiteralPath (Join-Path $script:DataRoot 'profiles.json') -Raw -Encoding UTF8 | ConvertFrom-Json
       $failed = @()
       foreach ($profile in $config.profiles) {
         $failed += [pscustomobject]@{ id = $profile.id; label = $profile.label; ok = $false; error = $Message }
@@ -732,6 +736,29 @@ try {
     Save-UiSettings
   }
 
+  function Update-ClientStatus {
+    if ([string]::IsNullOrWhiteSpace($env:CODEX_USAGE_CLIENT_VERSION)) { return }
+    $showRequest = Join-Path $script:DataRoot 'show.request'
+    if (Test-Path -LiteralPath $showRequest) {
+      Remove-Item -LiteralPath $showRequest -Force -ErrorAction SilentlyContinue
+      $script:Popup.Show()
+      $script:Popup.Activate()
+    }
+    try {
+      if (-not (Test-Path -LiteralPath $script:ClientStatusPath)) { return }
+      $status = Get-Content -LiteralPath $script:ClientStatusPath -Raw -Encoding UTF8 | ConvertFrom-Json
+      $script:ClientStatusItem.Text = [string]$status.message
+      $script:RestartUpdateItem.Visible = $status.state -eq 'ready'
+      $script:CheckUpdateItem.Enabled = $status.state -notin @('checking','downloading','ready')
+      if ($status.state -eq 'ready' -and $script:ClientUpdateNotified -ne [string]$status.version) {
+        $script:ClientUpdateNotified = [string]$status.version
+        if (-not $SmokeTest) {
+          $script:NotifyIcon.ShowBalloonTip(8000,'Codex 客户端更新',('v' + $status.version + ' 已下载。右键选择“重启并更新”，或退出后自动安装。'),[System.Windows.Forms.ToolTipIcon]::Info)
+        }
+      }
+    } catch { Write-TrayLog ('Client status: ' + $_.Exception.Message) }
+  }
+
   function Exit-App {
     if ($script:Exiting) { return }
     $script:Exiting = $true
@@ -742,6 +769,7 @@ try {
     try { $script:InitialTimer.Stop() } catch {}
     try { $script:StatusTimer.Stop() } catch {}
     try { $script:HoverTimer.Stop() } catch {}
+    try { $script:ClientTimer.Stop() } catch {}
     try { if ($null -ne $script:WorkerProcess -and -not $script:WorkerProcess.HasExited) { $script:WorkerProcess.Kill() } } catch {}
     try { $script:NotifyIcon.Visible = $false; $script:NotifyIcon.Dispose() } catch {}
     try { $script:Popup.Hide(); $script:Popup.Dispose() } catch {}
@@ -756,6 +784,9 @@ try {
   Load-AlertState
   $script:Popup = New-Object System.Windows.Forms.Form
   $script:Popup.Text = 'Codex 额度'
+  $iconPath = Join-Path $script:Root 'assets\app.ico'
+  $script:AppIcon = if (Test-Path -LiteralPath $iconPath) { New-Object System.Drawing.Icon -ArgumentList $iconPath } else { [System.Drawing.SystemIcons]::Information }
+  $script:Popup.Icon = $script:AppIcon
   $script:Popup.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
   $script:Popup.Font = New-UiFont
   $script:Popup.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::SizableToolWindow
@@ -1044,6 +1075,26 @@ try {
   $itemWork = $loginMenu.DropDownItems.Add('工作账号')
   [void]$menu.Items.Add($loginMenu)
   [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+  $clientMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+  $clientMenu.Text = '客户端更新'
+  $script:ClientStatusItem = $clientMenu.DropDownItems.Add($(if ($env:CODEX_USAGE_CLIENT_VERSION) { '版本 ' + $env:CODEX_USAGE_CLIENT_VERSION + ' · 等待检查' } else { '脚本模式 · 请使用 EXE 获取自动更新' }))
+  $script:ClientStatusItem.Enabled = $false
+  $script:CheckUpdateItem = $clientMenu.DropDownItems.Add('立即检查更新')
+  $script:CheckUpdateItem.Enabled = -not [string]::IsNullOrWhiteSpace($env:CODEX_USAGE_CLIENT_VERSION)
+  $script:CheckUpdateItem.Add_Click({
+    Set-Content -LiteralPath (Join-Path $script:DataRoot 'check-update.request') -Value 'check' -Encoding ASCII
+    $script:ClientStatusItem.Text = '正在检查更新…'
+  })
+  $script:RestartUpdateItem = $clientMenu.DropDownItems.Add('重启并更新')
+  $script:RestartUpdateItem.Visible = $false
+  $script:RestartUpdateItem.Add_Click({
+    Set-Content -LiteralPath (Join-Path $script:DataRoot 'restart.request') -Value 'restart' -Encoding ASCII
+    Exit-App
+  })
+  $releaseLink = $clientMenu.DropDownItems.Add('版本说明 / 下载客户端')
+  $releaseLink.Add_Click({ Start-Process 'https://github.com/lv5accelerator-xy/codex-dual-usage-dashboard/releases/latest' })
+  [void]$menu.Items.Add($clientMenu)
+  [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
   $itemLogs = $menu.Items.Add('打开日志文件夹')
   $itemExit = $menu.Items.Add('退出')
 
@@ -1071,7 +1122,7 @@ try {
   }
 
   $script:NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
-  $script:NotifyIcon.Icon = [System.Drawing.SystemIcons]::Information
+  $script:NotifyIcon.Icon = $script:AppIcon
   $script:NotifyIcon.Text = 'Codex 双账号额度'
   $script:NotifyIcon.ContextMenuStrip = $menu
   $script:NotifyIcon.Add_MouseClick({
@@ -1093,6 +1144,12 @@ try {
   }
 
   Show-Loading
+  if (-not [string]::IsNullOrWhiteSpace($env:CODEX_USAGE_CLIENT_VERSION)) {
+    $script:ClientTimer = New-Object System.Windows.Forms.Timer
+    $script:ClientTimer.Interval = 2000
+    $script:ClientTimer.Add_Tick({ Update-ClientStatus })
+    $script:ClientTimer.Start()
+  }
   $script:HoverTimer = New-Object System.Windows.Forms.Timer
   $script:HoverTimer.Interval = 150
   $script:HoverTimer.Add_Tick({ Update-MonitorHover })
@@ -1120,6 +1177,9 @@ try {
   })
   $script:InitialTimer.Start()
 
+  if (-not [string]::IsNullOrWhiteSpace($env:CODEX_USAGE_LAUNCH_ID)) {
+    Set-Content -LiteralPath (Join-Path $script:DataRoot 'client-ui-ready.txt') -Value $env:CODEX_USAGE_LAUNCH_ID -Encoding ASCII
+  }
   $script:AppContext = New-Object System.Windows.Forms.ApplicationContext
   Write-TrayLog 'Floating ball and tray icon are visible. Entering WinForms message loop.'
   [System.Windows.Forms.Application]::Run($script:AppContext)

@@ -22,3 +22,6 @@ Thumbs.db
 
 # Native UI smoke-test output (fixture data only)
 artifacts/
+
+# Packaged desktop build output
+dist/
