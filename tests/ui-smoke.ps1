@@ -63,6 +63,16 @@ foreach ($entry in @(@{ form = $script:Popup; name = 'detail.png' },@{ form = $s
     $bitmap.Save((Join-Path $outputDir $entry.name),[System.Drawing.Imaging.ImageFormat]::Png)
   } finally { $bitmap.Dispose() }
 }
+$setupPreview = Show-AccountSettings -PreviewTest
+$setupPreview.Show()
+[System.Windows.Forms.Application]::DoEvents()
+Assert-Ui ($script:SetupRows.Count -eq 2) 'Setup page exposes both account slots.'
+Assert-Ui ($script:SetupRows[0].name.MaxLength -eq 12) 'Names have a bounded readable length.'
+$setupBitmap = New-Object System.Drawing.Bitmap -ArgumentList $setupPreview.Width,$setupPreview.Height
+try {
+  $setupPreview.DrawToBitmap($setupBitmap,(New-Object System.Drawing.Rectangle -ArgumentList 0,0,$setupPreview.Width,$setupPreview.Height))
+  $setupBitmap.Save((Join-Path $outputDir 'account-setup.png'),[System.Drawing.Imaging.ImageFormat]::Png)
+} finally { $setupBitmap.Dispose(); $setupPreview.Close(); $setupPreview.Dispose() }
 # DPI and geometry contracts without requiring multiple physical monitors.
 $dpiFixture = New-Object CodexUsage.DpiForm
 $dpiFixture.ClientSize = New-Object System.Drawing.Size -ArgumentList 200,100

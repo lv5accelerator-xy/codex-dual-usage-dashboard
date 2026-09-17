@@ -2,13 +2,13 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.5.2**
+Current version: **v0.6.0**
 
 ## Windows EXE client (recommended)
 
 [Download the latest CodexUsage.exe](https://github.com/lv5accelerator-xy/codex-dual-usage-dashboard/releases/latest/download/CodexUsage.exe)
 
-Double-click the EXE and select **安装并启动** in the installation window. It installs into `%LOCALAPPDATA%\CodexUsage` and creates desktop and Start menu shortcuts without administrator permissions. The client uses Windows .NET Framework 4.8 / Windows PowerShell 5.1; it does not require a separate .NET 8 or Electron runtime. The existing quota reader remains embedded inside the EXE.
+Double-click the EXE and select **安装并启动** in the installation window. It installs into `%LOCALAPPDATA%\CodexUsage` and creates desktop and Start menu shortcuts without administrator permissions. The client uses Windows .NET Framework 4.8 / Windows PowerShell 5.1; it does not require a separate .NET 8 or Electron runtime. The packaged client now reads quotas through a native C# background process. The PowerShell WinForms UI and login helpers remain embedded.
 
 **Upgrading from the script version:** quit the old tray app, put the EXE in the old app folder, and run it once. If present, `ui-settings.json` and `profiles.json` are copied into the client's separate data directory. Existing `.codex-personal` / `.codex-work` login credentials stay where they are; no credentials are bundled or uploaded.
 
@@ -18,7 +18,7 @@ Double-click the EXE and select **安装并启动** in the installation window. 
 
 The client is listed as **Codex 额度** in Windows Settings → Apps. Quit the tray app before uninstalling. Uninstall removes program files and shortcuts while preserving settings and Codex account directories for reinstallation. No administrator privileges are needed.
 
-Version 0.5.1 precompiles the drawing controls during the build. The packaged UI loads a DLL instead of compiling C# source at startup. The UI and quota reader still use PowerShell; this is not a pure C# rewrite or a guarantee against security warnings.
+Version 0.5.1 precompiles the drawing controls during the build. The packaged UI loads a DLL instead of compiling C# source at startup. Since v0.6.0 the packaged quota reader, download updater, window integration and drawing controls are C#. The UI orchestration and login helpers still use PowerShell; this is an incremental migration, not a completed pure C# rewrite or a guarantee against security warnings.
 
 Releases include `READ-ME.txt` and `SHA256SUMS.txt` alongside the EXE and update manifest. Checksums verify consistency, not publisher identity.
 
@@ -42,6 +42,19 @@ GitHub Actions validates the source UI, builds the EXE, runs the packaged UI plu
 
 [Icon design and source assets](assets/README.md)
 
+## v0.6.0: accounts, recovery and desktop integration
+
+- Compact quotas have **independent colors**. Exhausted 5h does not turn a healthy long-term value red. “总量” is renamed **长周期** throughout the current UI.
+- At zero 5h quota, the second line shows a live **estimated recovery countdown**. Hover for the exact local reset timestamp. Once the reported reset is due, the UI requests one immediate refresh per account/reset, while regular one-minute polling continues. Missing and stale values never claim replenishment.
+- **账号与首次使用** opens automatically on first run and is available from the right-click menu. Enable one or two account slots and edit display names (up to 12 characters). Disabled accounts are hidden and are not queried. Names and enablement are saved atomically in profiles.json; existing profile paths and login data are retained.
+- Setup distinguishes missing CLI, missing login, existing credentials awaiting verification, and a fresh successful connection. “安装 CLI” / “登录 / 切换” opens the existing guided setup; “重新检测” rechecks installation and requests a quota refresh. A credential file alone is never labelled connected.
+- **开机启动** and **全屏时隐藏悬浮窗** are opt-in, off by default. Startup uses the current user's Run registry entry and is removed on uninstall. Full-screen detection is scoped to the monitor containing the floating window; returning from the full-screen application restores the user's visibility preference.
+- The native window layer handles per-monitor DPI changes, rescales controls, and periodically moves off-screen windows into a connected display's working area. Automated tests cover scaling roundtrips and negative-coordinate monitor geometry; mixed-DPI physical monitors still warrant real-device testing.
+- Background client downloads show percentages and distinguish network, integrity, permission and disk errors. “立即检查更新” retries after failure; the installed version remains intact.
+- The EXE uses a **C# quota reader** with bounded RPC waits, continuously drained stderr, independent per-account errors, and a Windows job object to clean up server children. The source/script launcher retains its PowerShell reader as a fallback. Native-reader tests talk to a local fixture server without account access.
+
+This release advances the C# migration; it does not remove the Windows PowerShell runtime requirement for the UI and login workflow.
+
 ## v0.4.2: adjustable compact transparency and one-minute refresh
 
 The compact strip defaults to **20% transparency** (80% opacity). Right-click **紧凑小窗透明度** and move the slider to choose **0–60% transparency**. Changes apply immediately and are remembered after restart. Windows opacity affects the entire compact window, including its text; hovering to expand restores full opacity for readability. The detail panel remains fully opaque.
@@ -50,7 +63,7 @@ Automatic quota refresh now runs every **60 seconds**. If a read is still runnin
 
 ## v0.4.1: compact mode, edge snapping, optional alerts
 
-The monitor now starts as a **320 × 64 logical-pixel strip**. Each account shows **5h remaining / total remaining** as two independent percentages. “Total” means the limiting long-term quota (weekly or meaningful monthly/workspace quota), not the sum of windows. When 5h reaches zero, the second line shows its recovery time in the local time zone, including a day label when needed. Missing reset times remain unknown; expired reset times wait for a fresh reading; stale data asks for confirmation. Hover to expand the full 5-hour/long-term view; move away for about half a second to collapse. It stays expanded while the detail panel or context menu is open, and never changes size during a drag. Right-click **紧凑模式（悬停展开）** to keep the full monitor visible instead.
+The monitor now starts as a **360 × 64 logical-pixel strip** (220 pixels wide with one enabled account). Each account shows **5h remaining / long-term remaining** as two independent percentages. “Long-term” means the limiting long-term quota (weekly or meaningful monthly/workspace quota), not the sum of windows. When 5h reaches zero, the second line shows the estimated time until recovery; the tooltip shows the exact local timestamp. Missing reset times remain unknown; expired reset times wait for a fresh reading; stale data asks for confirmation. Hover to expand the full 5-hour/long-term view; move away for about half a second to collapse. It stays expanded while the detail panel or context menu is open, and never changes size during a drag. Right-click **紧凑模式（悬停展开）** to keep the full monitor visible instead.
 
 **贴边吸附** is enabled by default. Release the monitor within 20 logical pixels of a screen's working-area edge to snap to it. Taskbars and negative-coordinate monitors are supported. A bottom-docked strip expands upward and returns to the same resting position. Drag away to detach, or turn snapping off in the right-click menu.
 
@@ -90,7 +103,7 @@ Quota order:
 2. Workspace/monthly remaining, when a meaningful limit is provided
 3. Weekly remaining
 
-Hover over reset times for the exact local timestamp and monthly used/limit details. Smaller windows scroll vertically; refreshes preserve the scroll position. Layout dimensions scale with the Windows system DPI when the app starts. Moving between monitors with different DPI settings may require restarting the app for crisp sizing; per-monitor dynamic DPI is not implemented.
+Hover over reset times for the exact local timestamp and monthly used/limit details. Smaller windows scroll vertically; refreshes preserve the scroll position. Layout dimensions scale with the Windows system DPI when the app starts. The native window layer handles per-monitor DPI changes; physical mixed-DPI monitor combinations have not all been tested.
 
 ## Refresh and data freshness
 
@@ -142,6 +155,8 @@ The smoke test does not start a quota worker, log in, or modify saved UI setting
 
 ## Project files
 
+- `desktop/UsageReader.cs` — native packaged quota reader and child-process lifetime control
+- `ui-experience.ps1` — account preferences, onboarding, recovery refresh and desktop options
 - `tray.ps1` — floating monitor, detail panel, tray actions, refresh lifecycle
 - `ui-model.ps1` — quota selection and account-specific freshness rules
 - `ui-behavior.ps1` — edge snapping and notification crossing/deduplication rules

@@ -93,11 +93,11 @@ jobs:
 
           后续版本在后台自动检查和下载，右键选择“客户端更新 → 重启并更新”生效，也可退出后自动安装。额度每分钟刷新一次；保留紧凑模式、透明度设置、贴边吸附与低额度通知。
 
-          小窗同时显示 5h / 总量剩余；5h 用尽时显示恢复时间（本机时区），过期或未更新的数据会提示等待确认。
+          小窗同时显示 5h / 长周期剩余，分别着色；5h 用尽时显示恢复倒计时，悬停查看本机时区的准确时刻。支持单账号、自定义名称和首次使用引导。右键可开启开机启动与全屏隐藏。新增跨屏 DPI 处理、更新下载进度和可重试的错误说明。
 
           首次从脚本版升级请先退出旧程序。将 EXE 放在旧版本目录首次运行，可自动迁移 ui-settings.json 和 profiles.json。现有账号凭据继续保留在用户的 .codex-personal / .codex-work 目录。
 
-          分享给朋友请发送本发布页链接，每个人登录自己的账号。详细步骤见 READ-ME.txt。界面控件已提前编译，客户端仍使用 PowerShell。
+          分享给朋友请发送本发布页链接，每个人登录自己的账号。详细步骤见 READ-ME.txt。额度读取、更新与窗口适配已使用 C#，界面和登录引导仍使用 PowerShell；这是渐进迁移。
 
           This build is unsigned. The SHA-256 digest is in SHA256SUMS.txt and update.json. Windows may show a publisher/reputation prompt on first launch.
           NOTES

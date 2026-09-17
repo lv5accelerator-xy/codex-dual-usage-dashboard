@@ -149,7 +149,7 @@ namespace CodexUsage {
         public event EventHandler ScaleChanged;
         public DpiForm() { DisplayDpi = 96; AutoScaleMode = AutoScaleMode.None; }
         static Padding ResizePadding(Padding p, float factor) { return new Padding((int)Math.Round(p.Left * factor), (int)Math.Round(p.Top * factor), (int)Math.Round(p.Right * factor), (int)Math.Round(p.Bottom * factor)); }
-        readonly System.Collections.Generic.List<Font> dpiFonts = new System.Collections.Generic.List<Font>();
+        readonly System.Collections.Generic.Dictionary<string, Font> dpiFonts = new System.Collections.Generic.Dictionary<string, Font>();
         void ScaleTree(Control control, float factor) {
             control.SuspendLayout();
             try {
@@ -157,8 +157,10 @@ namespace CodexUsage {
                 control.Bounds = new Rectangle((int)Math.Round(control.Left * factor), (int)Math.Round(control.Top * factor), (int)Math.Round(control.Width * factor), (int)Math.Round(control.Height * factor));
                 control.Padding = ResizePadding(control.Padding, factor);
                 control.Margin = ResizePadding(control.Margin, factor);
-                var font = new Font(control.Font.FontFamily, control.Font.Size * factor, control.Font.Style, control.Font.Unit);
-                dpiFonts.Add(font);
+                float size = (float)Math.Round(control.Font.Size * factor, 3);
+                string key = control.Font.FontFamily.Name + "/" + size.ToString(System.Globalization.CultureInfo.InvariantCulture) + "/" + control.Font.Style + "/" + control.Font.Unit;
+                Font font;
+                if (!dpiFonts.TryGetValue(key, out font)) { font = new Font(control.Font.FontFamily, size, control.Font.Style, control.Font.Unit); dpiFonts[key] = font; }
                 control.Font = font;
                 var table = control as TableLayoutPanel;
                 if (table != null) {
@@ -184,7 +186,7 @@ namespace CodexUsage {
         }
         protected override void Dispose(bool disposing) {
             base.Dispose(disposing);
-            if (disposing) { foreach (var font in dpiFonts) font.Dispose(); dpiFonts.Clear(); }
+            if (disposing) { foreach (var font in dpiFonts.Values) font.Dispose(); dpiFonts.Clear(); }
         }
         protected override void WndProc(ref Message message) {
             if (message.Msg == 0x02E0) { // WM_DPICHANGED, per-window suggested physical bounds.

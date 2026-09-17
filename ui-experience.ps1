@@ -76,7 +76,8 @@ function Get-SetupStatus {
   return '未登录'
 }
 function Show-AccountSettings {
-  if ($SmokeTest) { return }
+  param([switch]$PreviewTest)
+  if ($SmokeTest -and -not $PreviewTest) { return }
   $script:SetupDialog = New-Object CodexUsage.DpiForm
   $script:SetupDialog.DisplayDpi = $script:Popup.DisplayDpi
   $script:SetupDialog.Text = '账号与首次使用'
@@ -166,6 +167,10 @@ function Show-AccountSettings {
       Start-Refresh
     } catch { [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'无法保存账号设置') }
   })
+  if ($PreviewTest) {
+    foreach ($row in $script:SetupRows) { $row.status.Text = '已连接'; $row.login.Text = '登录 / 切换' }
+    return $script:SetupDialog
+  }
   $statusTimer = New-Object System.Windows.Forms.Timer
   $statusTimer.Interval = 1000
   $statusTimer.Add_Tick({
