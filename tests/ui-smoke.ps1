@@ -255,3 +255,29 @@ if ($env:CODEX_USAGE_CLIENT_VERSION) {
   Assert-Ui $script:CheckUpdateItem.Enabled 'Failed checks allow manual retry.'
   Remove-Item $script:ClientStatusPath -Force
 }
+
+# Accelerated lifetime regression: 180 refreshes (three hours of refresh cycles),
+# status/hover callbacks, and a real WinForms message pump. No forced GC in app.
+if (-not $env:CODEX_USAGE_CLIENT_VERSION) {
+  function Get-MemorySample {
+    [GC]::Collect(); [GC]::WaitForPendingFinalizers(); [GC]::Collect()
+    $process = [System.Diagnostics.Process]::GetCurrentProcess()
+    try {
+      return [pscustomobject]@{ managed = [GC]::GetTotalMemory($false); private = $process.PrivateMemorySize64; handles = $process.HandleCount }
+    } finally { $process.Dispose() }
+  }
+  $measurements = @()
+  for ($cycle = 0; $cycle -lt 4; $cycle++) {
+    for ($refresh = 0; $refresh -lt 60; $refresh++) {
+      Render-Data $sample
+      for ($tick = 0; $tick -lt 10; $tick++) { Update-Status; Update-MonitorHover }
+      [System.Windows.Forms.Application]::DoEvents()
+    }
+    $measurement = Get-MemorySample
+    $measurements += $measurement
+    Write-Output ('MEMORY batch={0} managedMB={1:N1} privateMB={2:N1} handles={3}' -f $cycle,($measurement.managed/1MB),($measurement.private/1MB),$measurement.handles)
+  }
+  $growth = $measurements[3].managed - $measurements[0].managed
+  Assert-Ui ($growth -lt 32MB) ('Retained managed heap grew by ' + [Math]::Round($growth/1MB,1) + ' MB after warmup.')
+  Assert-Ui (($measurements[3].handles - $measurements[0].handles) -lt 100) 'Repeated refreshes must not leak process handles.'
+}
