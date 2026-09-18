@@ -7,5 +7,7 @@ foreach (var obj in runtime.Heap.EnumerateObjects()) {
     totals.TryGetValue(name, out var total);
     totals[name] = (total.count + 1, total.size + obj.Size);
 }
+// Resume the parent before writing to its redirected stdout pipe.
+target.Dispose();
 foreach (var item in totals.OrderByDescending(x => x.Value.size).Take(25))
     Console.WriteLine($"HEAP {item.Key} count={item.Value.count} bytes={item.Value.size}");
