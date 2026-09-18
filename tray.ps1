@@ -385,6 +385,14 @@ try {
     } catch { Write-TrayLog ('Notification warning: ' + $_.Exception.Message) }
   }
 
+  # Convert delegates once; detach them before discarding a card tree.
+  $script:CardLoginHandler = [System.EventHandler]{ param($sender,$e) Start-Login ([string]$sender.Tag) }
+  $script:CardWheelHandler = [System.Windows.Forms.MouseEventHandler]{
+    param($sender,$e)
+    Move-VerticalScroll $e.Delta
+    if ($e -is [System.Windows.Forms.HandledMouseEventArgs]) { $e.Handled = $true }
+  }
+
   function Clear-Content {
     $script:ResetLabels = @()
     $script:CardStates = @()
@@ -392,6 +400,11 @@ try {
     while ($script:ContentPanel.Controls.Count -gt 0) {
       $control = $script:ContentPanel.Controls[0]
       $script:ContentPanel.Controls.RemoveAt(0)
+      foreach ($child in @(Get-ControlTree $control)) {
+        $child.remove_MouseWheel($script:CardWheelHandler)
+        $child.remove_Click($script:CardLoginHandler)
+        $child.Tag = $null
+      }
       $control.Dispose()
     }
   }
@@ -479,13 +492,10 @@ try {
     $login = New-Button '重新登录'
     $login.Tag = [string]$Profile.id
     $login.AccessibleName = [string]$Profile.label + '：重新登录'
-    $login.Add_Click({ param($sender,$eventArgs) Start-Login ([string]$sender.Tag) })
+    $login.Add_Click($script:CardLoginHandler)
     $grid.Controls.Add($login,1,$row)
     foreach ($control in @(Get-ControlTree $card)) {
-      $control.Add_MouseWheel({ param($sender,$eventArgs)
-        Move-VerticalScroll $eventArgs.Delta
-        if ($eventArgs -is [System.Windows.Forms.HandledMouseEventArgs]) { $eventArgs.Handled = $true }
-      })
+      $control.Add_MouseWheel($script:CardWheelHandler)
     }
     $script:ContentPanel.Controls.Add($card)
   }
@@ -562,12 +572,17 @@ try {
         $label.LongColor = Get-ValueColor $pair.longTerm $stale
         $label.Invalidate()
         $script:ToolTip.SetToolTip($label,($account + ' · 5h / 长周期剩余（长周期指长周期额度）' + "`r`n5 小时：" + (Format-Percent $pair.fiveHour) + "`r`n" + $tip))
-        $script:ToolTip.SetToolTip($recovery,('5 小时额度用尽时显示本机时间；以实际刷新结果为准。' + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt)) + $(try { "`r`n" + ([DateTimeOffset]::Parse([string]$profile.fiveHour.resetsAt)).ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss zzz') } catch { '' })))
+        $script:ToolTip.SetToolTip($recovery,('5 小时额度用尽时显示本机时间；以实际刷新结果为准。' + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt)) + $(if (-not [string]::IsNullOrWhiteSpace([string]$profile.fiveHour.resetsAt)) { try { "`r`n" + ([DateTimeOffset]::Parse([string]$profile.fiveHour.resetsAt)).ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss zzz') } catch { '' } })))
       }
     }
   }
 
   function Update-Status {
+    param([switch]$Scheduled)
+    # Labels show minutes. Keep the one-second recovery/full-screen checks cheap.
+    $now = [DateTimeOffset]::UtcNow
+    if ($Scheduled -and $null -ne $script:LastStatusPaint -and ($now - $script:LastStatusPaint).TotalSeconds -lt 15) { return }
+    $script:LastStatusPaint = $now
     $problems = @()
     foreach ($profile in @($script:LastData.profiles)) {
       if ($null -ne $profile -and (Test-ProfileStale $profile)) { $problems += [string]$profile.label }
@@ -685,6 +700,7 @@ try {
       $script:WorkerProcess = New-Object System.Diagnostics.Process
       $script:WorkerProcess.StartInfo = $psi
       if (-not $script:WorkerProcess.Start()) { throw '无法启动后台读取进程。' }
+      if ($null -ne $script:PollTimer) { $script:PollTimer.Start() }
       Write-TrayLog ('Refresh worker PID: ' + $script:WorkerProcess.Id)
     } catch {
       if ($null -ne $script:WorkerProcess) { $script:WorkerProcess.Dispose(); $script:WorkerProcess = $null }
@@ -702,6 +718,7 @@ try {
       if (([DateTimeOffset]::Now - $script:RefreshStarted).TotalSeconds -lt 150) { return }
       try { $script:WorkerProcess.Kill() } catch {}
       $script:WorkerProcess.Dispose()
+      $script:PollTimer.Stop()
       $script:WorkerProcess = $null
       $script:RefreshPending = $false
       $script:RefreshButton.Enabled = $true
@@ -710,6 +727,7 @@ try {
       return
     }
     $script:WorkerProcess.Dispose()
+    $script:PollTimer.Stop()
     $script:WorkerProcess = $null
     $script:RefreshPending = $false
     $script:RefreshButton.Enabled = $true
@@ -775,7 +793,10 @@ try {
     }
     try {
       if (-not (Test-Path -LiteralPath $script:ClientStatusPath)) { return }
-      $status = Get-Content -LiteralPath $script:ClientStatusPath -Raw -Encoding UTF8 | ConvertFrom-Json
+      $statusJson = [System.IO.File]::ReadAllText($script:ClientStatusPath)
+      if ($statusJson -eq $script:LastClientStatus) { return }
+      $status = $statusJson | ConvertFrom-Json
+      $script:LastClientStatus = $statusJson
       $script:ClientStatusItem.Text = [string]$status.message
       $script:RestartUpdateItem.Visible = $status.state -eq 'ready'
       $script:CheckUpdateItem.Enabled = $status.state -notin @('checking','downloading','ready')
@@ -1216,13 +1237,12 @@ try {
   $script:HoverTimer.Start()
   $script:StatusTimer = New-Object System.Windows.Forms.Timer
   $script:StatusTimer.Interval = 1000
-  $script:StatusTimer.Add_Tick({ Update-Status; Update-DesktopExperience })
+  $script:StatusTimer.Add_Tick({ Update-Status -Scheduled; Update-DesktopExperience })
   $script:StatusTimer.Start()
 
   $script:PollTimer = New-Object System.Windows.Forms.Timer
   $script:PollTimer.Interval = 350
   $script:PollTimer.Add_Tick({ Finish-RefreshIfReady })
-  $script:PollTimer.Start()
 
   $script:PeriodicTimer = New-Object System.Windows.Forms.Timer
   $script:PeriodicTimer.Interval = $script:RefreshIntervalMs
