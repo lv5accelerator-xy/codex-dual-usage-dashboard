@@ -266,8 +266,13 @@ if (-not $env:CODEX_USAGE_CLIENT_VERSION) {
       return [pscustomobject]@{ managed = [GC]::GetTotalMemory($false); private = $process.PrivateMemorySize64; handles = $process.HandleCount; errors = $Error.Count }
     } finally { $process.Dispose() }
   }
+  $idleStart = Get-MemorySample
+  for ($tick = 0; $tick -lt 2000; $tick++) { Update-Status; Update-MonitorHover }
+  $idleEnd = Get-MemorySample
+  Write-Output ('MEMORY status-only retainedMB={0:N1}' -f (($idleEnd.managed - $idleStart.managed)/1MB))
   $measurements = @()
   for ($cycle = 0; $cycle -lt 4; $cycle++) {
+    $oldCard = New-Object System.WeakReference($script:ContentPanel.Controls[0])
     for ($refresh = 0; $refresh -lt 60; $refresh++) {
       Render-Data $sample
       for ($tick = 0; $tick -lt 10; $tick++) { Update-Status; Update-MonitorHover }
@@ -275,6 +280,7 @@ if (-not $env:CODEX_USAGE_CLIENT_VERSION) {
     }
     $measurement = Get-MemorySample
     $measurements += $measurement
+    Write-Output ('MEMORY oldCardAlive=' + $oldCard.IsAlive)
     Write-Output ('MEMORY batch={0} managedMB={1:N1} privateMB={2:N1} handles={3} errors={4}' -f $cycle,($measurement.managed/1MB),($measurement.private/1MB),$measurement.handles,$measurement.errors)
   }
   $growth = $measurements[3].managed - $measurements[0].managed
