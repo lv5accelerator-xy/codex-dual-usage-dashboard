@@ -396,11 +396,11 @@ try {
   function Clear-Content {
     $script:ResetLabels = @()
     $script:CardStates = @()
-    $script:ToolTip.RemoveAll()
     while ($script:ContentPanel.Controls.Count -gt 0) {
       $control = $script:ContentPanel.Controls[0]
       $script:ContentPanel.Controls.RemoveAt(0)
       foreach ($child in @(Get-ControlTree $control)) {
+        $script:ToolTip.SetToolTip($child,$null)
         $child.remove_MouseWheel($script:CardWheelHandler)
         $child.remove_Click($script:CardLoginHandler)
         $child.Tag = $null
