@@ -8,7 +8,7 @@ foreach (var obj in runtime.Heap.EnumerateObjects()) {
     totals.TryGetValue(name, out var total);
     if (name == "System.String" && obj.Size > 100000) {
         string value = obj.AsString(2000000);
-        string[] patterns = { "function ", "System.", "Windows", "5 小时", "长周期", "未提供", "重置", "D:\\a\\", "Exception", "powershell", "\r\n" };
+        string[] patterns = { "Management", "Automation", "Collections", "PSParameterizedProperty", "PSObject", "PSCustomObject", "DateTime", "Drawing", "Reflection", "ScriptBlock", "String" };
         // Only fixed category indexes and occurrence counts leave the process.
         // Never print raw heap strings, paths, credentials, or exception payloads.
         var counts = patterns.Select((pattern, index) => index + ":" + ((value.Length - value.Replace(pattern, "").Length) / pattern.Length));

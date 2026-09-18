@@ -284,7 +284,7 @@ if (-not $env:CODEX_USAGE_CLIENT_VERSION) {
     Write-Output ('MEMORY batch={0} managedMB={1:N1} privateMB={2:N1} handles={3} errors={4}' -f $cycle,($measurement.managed/1MB),($measurement.private/1MB),$measurement.handles,$measurement.errors)
   }
   Write-Output ('MEMORY fonts=' + $script:Fonts.Count)
-  $Error | Select-Object -First 3 | ForEach-Object { Write-Output ('MEMORY recentError=' + $_.ToString()) }
+  $Error | Select-Object -First 3 | ForEach-Object { Write-Output ('MEMORY errorLine=' + $_.InvocationInfo.ScriptLineNumber) }
   & (Join-Path $script:Root 'artifacts/memory-probe/MemoryProbe.exe') $PID
   $growth = $measurements[3].managed - $measurements[0].managed
   Assert-Ui ($growth -lt 32MB) ('Retained managed heap grew by ' + [Math]::Round($growth/1MB,1) + ' MB after warmup.')
