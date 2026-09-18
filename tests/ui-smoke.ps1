@@ -266,8 +266,10 @@ if (-not $env:CODEX_USAGE_CLIENT_VERSION) {
       return [pscustomobject]@{ managed = [GC]::GetTotalMemory($false); private = $process.PrivateMemorySize64; handles = $process.HandleCount; errors = $Error.Count }
     } finally { $process.Dispose() }
   }
+  $initialTypeNames = ($script:ProfileConfig.profiles[0].PSTypeNames -join ';')
   $idleStart = Get-MemorySample
   for ($tick = 0; $tick -lt 2000; $tick++) { Update-Status; Update-MonitorHover }
+  Assert-Ui (($script:ProfileConfig.profiles[0].PSTypeNames -join ';') -eq $initialTypeNames) 'Status ticks must not grow account type metadata.'
   $idleEnd = Get-MemorySample
   Write-Output ('MEMORY status-only retainedMB={0:N1}' -f (($idleEnd.managed - $idleStart.managed)/1MB))
   $measurements = @()

@@ -58,8 +58,9 @@ function Merge-DisplayData {
 function Test-ProfileStale {
   param($Profile,[DateTimeOffset]$Now = [DateTimeOffset]::Now)
   if ($null -eq $Profile -or -not $Profile.ok -or $Profile.stale) { return $true }
-  try { return (($Now - [DateTimeOffset]::Parse([string]$Profile.fetchedAt)).TotalMinutes -ge 10) }
-  catch { return $true }
+  $fetchedAt = [DateTimeOffset]::MinValue
+  if (-not [DateTimeOffset]::TryParse([string]$Profile.fetchedAt,[ref]$fetchedAt)) { return $true }
+  return (($Now - $fetchedAt).TotalMinutes -ge 10)
 }
 
 function Format-Percent {

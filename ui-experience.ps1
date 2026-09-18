@@ -36,8 +36,15 @@ function Get-ActiveIds {
 }
 function Get-AccountName {
   param([string]$Id)
-  $profile = @($script:ProfileConfig.profiles | Where-Object { $_.id -eq $Id } | Select-Object -First 1)
-  if ($profile.Count -and -not [string]::IsNullOrWhiteSpace([string]$profile[0].label)) { return [string]$profile[0].label }
+  # Windows PowerShell 5.1 Select-Object -First decorates the same object's
+  # PSTypeNames on every call. Repeated UI ticks then retain ever-longer binder
+  # keys. Read the original object directly without changing its type metadata.
+  foreach ($profile in $script:ProfileConfig.profiles) {
+    if ($profile.id -eq $Id) {
+      if (-not [string]::IsNullOrWhiteSpace([string]$profile.label)) { return [string]$profile.label }
+      break
+    }
+  }
   if ($Id -eq 'personal') { return '个人' }
   return '工作'
 }
