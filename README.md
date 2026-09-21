@@ -2,7 +2,7 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.6.1**
+Current version: **v0.6.2**
 
 ## Windows EXE client (recommended)
 
@@ -41,6 +41,13 @@ Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File desktop/build.ps1` 
 GitHub Actions validates the source UI, builds the EXE, runs the packaged UI plus migration/integrity tests, and publishes a GitHub Release when `VERSION` is new. Published version assets are immutable: increment `VERSION` for each release. No developer API key or signing secret is required for the current unsigned build.
 
 [Icon design and source assets](assets/README.md)
+
+## v0.6.2: bounded memory during repeated refreshes
+
+- Avoid Windows PowerShell 5.1 `Select-Object -First` repeatedly decorating the same account object's type metadata. Direct account lookup prevents growing type-name strings and binding caches.
+- Refresh displayed countdown/status text every 15 seconds; quota requests remain once per minute, and recovery/full-screen checks remain once per second. Manual refresh results still render immediately.
+- Stop worker polling when idle, avoid reparsing unchanged updater status, and unregister card handlers/tooltips before disposal.
+- Windows CI checks 2,000 idle status updates plus 240 accelerated refresh cycles, retained heap/private memory growth, collectible cards, and bounded process handles. These are accelerated fixture tests, not a claim of a real multi-hour soak or a fixed RAM ceiling on every PC.
 
 ## v0.6.1: account settings save fix
 

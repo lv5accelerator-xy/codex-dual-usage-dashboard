@@ -122,7 +122,7 @@ function Show-AccountSettings {
   $script:SetupRows = @()
   $rowIndex = 0
   foreach ($id in @('personal','work')) {
-    $profile = $script:ProfileConfig.profiles | Where-Object { $_.id -eq $id } | Select-Object -First 1
+    $profile = Get-DisplayProfile $script:ProfileConfig $id
     if ($null -eq $profile) { continue }
     $enabled = New-Object System.Windows.Forms.CheckBox
     $enabled.Checked = Get-ProfileEnabled $profile
@@ -174,7 +174,7 @@ function Show-AccountSettings {
     try {
       $copy = $script:ProfileConfig | ConvertTo-Json -Depth 10 | ConvertFrom-Json
       foreach ($row in $script:SetupRows) {
-        $profile = $copy.profiles | Where-Object { $_.id -eq $row.profile.id } | Select-Object -First 1
+        $profile = Get-DisplayProfile $copy ([string]$row.profile.id)
         $nameText = $row.name.Text.Trim()
         if ([string]::IsNullOrWhiteSpace($nameText)) { throw '账号名称不能为空。' }
         $profile.label = $nameText

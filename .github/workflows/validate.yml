@@ -29,8 +29,6 @@ jobs:
         run: |
           ./tests/ui-model.tests.ps1
           ./tests/ui-behavior.tests.ps1
-      - name: Build temporary memory investigation helper
-        run: dotnet build tests/memory-probe/MemoryProbe.csproj -c Release -o artifacts/memory-probe
       - name: Render native UI and exercise resize and failure states
         shell: powershell
         run: ./tray.ps1 -SmokeTest
@@ -93,7 +91,7 @@ jobs:
           cat > release-notes.md <<'NOTES'
           Windows 10/11 desktop client. Download **CodexUsage.exe** and double-click it. Confirm “安装并启动” on first launch. Installation is per-user and creates shortcuts; no administrator access is needed. Windows Settings → Apps now includes an uninstall entry that preserves settings and account data.
 
-          v0.6.1 修复账号设置保存时“路径的形式不合法”的错误，保留账号目录并备份上一次设置。
+          v0.6.2 修复长时间运行时内存持续增长：账号名称读取不再反复增加 PowerShell 对象类型标记，减少空闲重绘并正确清理卡片事件与提示。新增 Windows 累计刷新内存回归检查；额度仍每分钟刷新。保留 v0.6.1 的账号设置保存修复。
 
           后续版本在后台自动检查和下载，右键选择“客户端更新 → 重启并更新”生效，也可退出后自动安装。额度每分钟刷新一次；保留紧凑模式、透明度设置、贴边吸附与低额度通知。
 

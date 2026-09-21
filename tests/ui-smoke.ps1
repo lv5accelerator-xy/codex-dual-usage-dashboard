@@ -256,7 +256,7 @@ if ($env:CODEX_USAGE_CLIENT_VERSION) {
   Remove-Item $script:ClientStatusPath -Force
 }
 
-# Accelerated lifetime regression: 180 refreshes (three hours of refresh cycles),
+# Accelerated lifetime regression: 60 warmup + 180 measured refreshes,
 # status/hover callbacks, and a real WinForms message pump. No forced GC in app.
 if (-not $env:CODEX_USAGE_CLIENT_VERSION) {
   function Get-MemorySample {
@@ -271,6 +271,7 @@ if (-not $env:CODEX_USAGE_CLIENT_VERSION) {
   for ($tick = 0; $tick -lt 2000; $tick++) { Update-Status; Update-MonitorHover }
   Assert-Ui (($script:ProfileConfig.profiles[0].PSTypeNames -join ';') -eq $initialTypeNames) 'Status ticks must not grow account type metadata.'
   $idleEnd = Get-MemorySample
+  Assert-Ui (($idleEnd.managed - $idleStart.managed) -lt 16MB) 'Idle status updates must have bounded retained memory.'
   Write-Output ('MEMORY status-only retainedMB={0:N1}' -f (($idleEnd.managed - $idleStart.managed)/1MB))
   $measurements = @()
   for ($cycle = 0; $cycle -lt 4; $cycle++) {
@@ -282,13 +283,11 @@ if (-not $env:CODEX_USAGE_CLIENT_VERSION) {
     }
     $measurement = Get-MemorySample
     $measurements += $measurement
-    Write-Output ('MEMORY oldCardAlive=' + $oldCard.IsAlive)
+    Assert-Ui (-not $oldCard.IsAlive) 'Disposed account cards must be collectible.'
     Write-Output ('MEMORY batch={0} managedMB={1:N1} privateMB={2:N1} handles={3} errors={4}' -f $cycle,($measurement.managed/1MB),($measurement.private/1MB),$measurement.handles,$measurement.errors)
   }
-  Write-Output ('MEMORY fonts=' + $script:Fonts.Count)
-  $Error | Select-Object -First 3 | ForEach-Object { Write-Output ('MEMORY errorLine=' + $_.InvocationInfo.ScriptLineNumber) }
-  & (Join-Path $script:Root 'artifacts/memory-probe/MemoryProbe.exe') $PID
   $growth = $measurements[3].managed - $measurements[0].managed
   Assert-Ui ($growth -lt 32MB) ('Retained managed heap grew by ' + [Math]::Round($growth/1MB,1) + ' MB after warmup.')
+  Assert-Ui (($measurements[3].private - $measurements[0].private) -lt 64MB) 'Private memory growth must remain bounded after warmup.'
   Assert-Ui (($measurements[3].handles - $measurements[0].handles) -lt 100) 'Repeated refreshes must not leak process handles.'
 }
