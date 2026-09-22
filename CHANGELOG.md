@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 - 2026-09-22
+
+- Added opt-in cross-device notifications for completed Codex turns.
+- Detects persisted Codex `task_complete` events from local rollout JSONL sessions instead of relying on process exit.
+- Added encrypted/authenticated relay messages, hashed pair topics, per-device identities, event deduplication and optional final-response summaries.
+- Added a tray configuration dialog with pairing-key generation, custom HTTPS relay support and test notifications.
+- Added offline regression coverage for encryption, tamper detection, task parsing, privacy defaults and relay validation.
+
+
 ## 0.5.0 - 2026-09-17
 
 - Added a single Windows EXE with an embedded UI payload, per-user installation, and desktop/Start menu shortcuts.
