@@ -75,7 +75,7 @@ function Show-FatalError {
 }
 
 try {
-  Write-TrayLog '===== v0.6.2 tray starting ====='
+  Write-TrayLog '===== v0.7.0 tray starting ====='
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
   if (-not ('CodexUsage.Surface' -as [type])) {
@@ -820,6 +820,7 @@ try {
     try { $script:StatusTimer.Stop() } catch {}
     try { $script:HoverTimer.Stop() } catch {}
     try { $script:ClientTimer.Stop() } catch {}
+    try { Stop-RemoteWorker } catch {}
     try { if ($null -ne $script:WorkerProcess -and -not $script:WorkerProcess.HasExited) { $script:WorkerProcess.Kill() } } catch {}
     try { $script:NotifyIcon.Visible = $false; $script:NotifyIcon.Dispose() } catch {}
     try { $script:Popup.Hide(); $script:Popup.Dispose() } catch {}
@@ -831,9 +832,11 @@ try {
   }
 
   . (Join-Path $script:Root 'ui-experience.ps1')
+  . (Join-Path $script:Root 'remote-ui.ps1')
   $script:UiSettings = Load-UiSettings
   Load-ProfilePreferences
   Load-AlertState
+  Initialize-RemoteNotifications
   $script:Popup = New-Object CodexUsage.DpiForm
   $script:Popup.DisplayDpi = [int]($script:UiScale * 96)
   $script:Popup.Text = 'Codex 额度'
@@ -1130,6 +1133,8 @@ try {
   $itemTopMost.Checked = [bool]$script:UiSettings.topMost
   $itemAccounts = $menu.Items.Add('账号与首次使用')
   $itemAccounts.Add_Click({ Show-AccountSettings })
+  $itemRemote = $menu.Items.Add('跨电脑 Codex 完成通知')
+  $itemRemote.Add_Click({ Show-RemoteNotificationSettings })
   $itemStartup = $menu.Items.Add('开机启动')
   $itemStartup.CheckOnClick = $true
   $itemStartup.Enabled = -not [string]::IsNullOrWhiteSpace($env:CODEX_USAGE_CLIENT_PATH)
@@ -1208,6 +1213,7 @@ try {
     if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) { Toggle-Popup }
   })
   $script:NotifyIcon.Visible = -not $SmokeTest
+  Start-RemoteWorker
 
   Apply-ProfileLayout
   $script:Ball.Add_ScaleChanged({ $script:Ball.Radius = B 16; Remember-MonitorPosition })
@@ -1237,7 +1243,7 @@ try {
   $script:HoverTimer.Start()
   $script:StatusTimer = New-Object System.Windows.Forms.Timer
   $script:StatusTimer.Interval = 1000
-  $script:StatusTimer.Add_Tick({ Update-Status -Scheduled; Update-DesktopExperience })
+  $script:StatusTimer.Add_Tick({ Update-Status -Scheduled; Update-DesktopExperience; Update-RemoteNotifications })
   $script:StatusTimer.Start()
 
   $script:PollTimer = New-Object System.Windows.Forms.Timer
