@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 
 function Assert-Remote([bool]$Condition,[string]$Message) {
   if (-not $Condition) { throw ('Remote notification test: ' + $Message) }
@@ -11,7 +11,7 @@ try {
   . (Join-Path $root 'remote-worker.ps1') -DataRoot $temp -LibraryOnly
 
   $key = 'pair-key-test-123456789'
-  $plain = '{"hello":"跨电脑 Codex","value":42}'
+  $plain = '{"hello":"remote Codex","value":42}'
   $cipher = Protect-RemoteMessage -PlainText $plain -PairKey $key
   Assert-Remote ($cipher -ne $plain) 'Ciphertext must not expose plaintext.'
   Assert-Remote ((Unprotect-RemoteMessage -CipherText $cipher -PairKey $key) -eq $plain) 'Encrypted payload must round-trip.'
@@ -44,7 +44,7 @@ try {
       payload = [ordered]@{
         type = 'task_complete'
         turn_id = 'turn-123'
-        last_agent_message = '施工完成并通过测试'
+        last_agent_message = 'build completed and tests passed'
         error = $null
       }
     } | ConvertTo-Json -Compress -Depth 6)
@@ -56,7 +56,7 @@ try {
   Assert-Remote ($events[0].id -eq 'pc-a:turn-123') 'Event id must deduplicate by device and turn.'
   Assert-Remote ($events[0].project -eq 'tft-cn-companion') 'Project name must come from session cwd.'
   Assert-Remote ($events[0].status -eq 'completed') 'Null error must map to completed.'
-  Assert-Remote ($events[0].summary -eq '施工完成并通过测试') 'Summary opt-in must include the final response.'
+  Assert-Remote ($events[0].summary -eq 'build completed and tests passed') 'Summary opt-in must include the final response.'
 
   $privateEvents = @(Get-CompletionEventsFromFile -Path $session -Since $now.AddMinutes(-1) -DeviceId 'pc-a' -DeviceName 'Office-PC' -IncludeSummary $false)
   Assert-Remote ([string]::IsNullOrEmpty([string]$privateEvents[0].summary)) 'Summary must be omitted by default.'
