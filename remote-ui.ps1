@@ -1,4 +1,4 @@
-# Cross-device Codex completion notification UI/lifecycle. Dot-sourced by tray.ps1.
+﻿# Cross-device Codex completion notification UI/lifecycle. Dot-sourced by tray.ps1.
 $script:RemoteSettingsPath = Join-Path $script:DataRoot 'remote-notifications.json'
 $script:RemoteInboxPath = Join-Path $script:DataRoot 'remote-inbox.jsonl'
 $script:RemoteStatusPath = Join-Path $script:DataRoot 'remote-worker-status.json'
