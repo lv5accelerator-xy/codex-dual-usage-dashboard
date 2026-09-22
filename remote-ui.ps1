@@ -6,7 +6,7 @@ $script:RemoteNotifiedPath = Join-Path $script:DataRoot 'remote-notified.json'
 $script:RemoteTestRequestPath = Join-Path $script:DataRoot 'remote-test.request'
 $script:RemoteWorkerProcess = $null
 $script:RemoteSettings = $null
-$script:RemoteNotified = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+$script:RemoteNotified = New-Object 'System.Collections.Generic.HashSet[string]' -ArgumentList ([StringComparer]::Ordinal)
 $script:RemoteLastEnsure = [DateTimeOffset]::MinValue
 
 function New-RemotePairKey {
