@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 
 function Convert-WebResponseContentToText {
   param([Parameter(Mandatory = $true)]$Content)
