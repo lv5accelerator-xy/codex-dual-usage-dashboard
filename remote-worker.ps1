@@ -128,7 +128,7 @@ function Resolve-RemoteCodexHome {
 }
 
 function Get-RemoteCodexHomes {
-  $homes = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  $homes = New-Object 'System.Collections.Generic.HashSet[string]' -ArgumentList ([StringComparer]::OrdinalIgnoreCase)
   [void]$homes.Add((Join-Path $env:USERPROFILE '.codex'))
   $profilesPath = Join-Path $DataRoot 'profiles.json'
   if (Test-Path -LiteralPath $profilesPath) {
@@ -323,8 +323,8 @@ if ($null -eq $settings -or -not [bool]$settings.enabled -or [string]::IsNullOrW
 }
 
 $startedAt = [DateTimeOffset]::UtcNow
-$sentEvents = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
-$seenRelayIds = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+$sentEvents = New-Object 'System.Collections.Generic.HashSet[string]' -ArgumentList ([StringComparer]::Ordinal)
+$seenRelayIds = New-Object 'System.Collections.Generic.HashSet[string]' -ArgumentList ([StringComparer]::Ordinal)
 $watchers = @()
 $lastFallback = [DateTimeOffset]::MinValue
 $lastRelayPoll = [DateTimeOffset]::MinValue
@@ -349,7 +349,7 @@ try {
       }
     } catch { break }
 
-    $paths = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $paths = New-Object 'System.Collections.Generic.HashSet[string]' -ArgumentList ([StringComparer]::OrdinalIgnoreCase)
     foreach ($entry in $watchers) {
       foreach ($sourceId in $entry.ids) {
         foreach ($evt in @(Get-Event -SourceIdentifier $sourceId -ErrorAction SilentlyContinue)) {
