@@ -92,7 +92,7 @@ jobs:
           cat > release-notes.md <<'NOTES'
           Windows 10/11 desktop client. Download **CodexUsage.exe** and double-click it. Confirm “安装并启动” on first launch. Installation is per-user and creates shortcuts; no administrator access is needed. Windows Settings → Apps now includes an uninstall entry that preserves settings and account data.
 
-          v0.6.2 修复长时间运行时内存持续增长：账号名称读取不再反复增加 PowerShell 对象类型标记，减少空闲重绘并正确清理卡片事件与提示。新增 Windows 累计刷新内存回归检查；额度仍每分钟刷新。保留 v0.6.1 的账号设置保存修复。
+          v0.7.0 新增跨电脑 Codex 完成通知：右键“跨电脑 Codex 完成通知”，两台电脑填写同一配对密钥后，一台电脑的 Codex 完成一轮施工时，另一台电脑会收到 Windows 通知。监听 Codex 本地 task_complete 记录，不依赖进程退出；中继正文在本机加密，最终回复摘要默认关闭。
 
           后续版本在后台自动检查和下载，右键选择“客户端更新 → 重启并更新”生效，也可退出后自动安装。额度每分钟刷新一次；保留紧凑模式、透明度设置、贴边吸附与低额度通知。
 
