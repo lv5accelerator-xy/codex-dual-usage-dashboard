@@ -2,7 +2,7 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.6.2**
+Current version: **v0.7.0**
 
 ## Windows EXE client (recommended)
 
@@ -41,6 +41,16 @@ Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File desktop/build.ps1` 
 GitHub Actions validates the source UI, builds the EXE, runs the packaged UI plus migration/integrity tests, and publishes a GitHub Release when `VERSION` is new. Published version assets are immutable: increment `VERSION` for each release. No developer API key or signing secret is required for the current unsigned build.
 
 [Icon design and source assets](assets/README.md)
+
+## v0.7.0: cross-device Codex completion notifications
+
+- Adds opt-in **跨电脑 Codex 完成通知** in the tray menu. Two PCs using the same pairing key can notify each other when a persisted Codex turn finishes.
+- Watches the official local Codex rollout records under `.codex*/sessions/.../*.jsonl` and reacts to persisted `event_msg / task_complete` records rather than guessing from process exit.
+- Sends device name, project folder, completion/error state and finish time. The final assistant response is **off by default** and can be enabled as an optional summary (capped at 800 characters).
+- Relay payloads are encrypted and authenticated locally with keys derived from the pairing secret; the public relay topic is a SHA-256-derived identifier and does not contain the secret itself.
+- Uses `https://ntfy.sh` as the default relay and supports a custom HTTPS ntfy-compatible endpoint (plain HTTP is allowed only for localhost).
+- Deduplicates remote events by device/turn id and keeps a bounded local notification ledger. Existing historical turns are not replayed when the watcher starts.
+- Includes offline regression tests for encryption/authentication, tamper rejection, project extraction, task-complete parsing, privacy defaults and relay URL validation.
 
 ## v0.6.2: bounded memory during repeated refreshes
 
