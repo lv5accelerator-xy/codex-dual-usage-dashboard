@@ -7,11 +7,6 @@ function Convert-WebResponseContentToText {
     return [System.Text.Encoding]::UTF8.GetString([byte[]]$Content)
   }
 
-  if ($Content -is [System.IO.Stream]) {
-    $reader = New-Object System.IO.StreamReader -ArgumentList $Content,[System.Text.Encoding]::UTF8,$true,4096,$true
-    try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
-  }
-
   return [string]$Content
 }
 
