@@ -1,4 +1,14 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
+
+function Convert-WebResponseContentToText {
+  param([Parameter(Mandatory = $true)]$Content)
+
+  if ($Content -is [byte[]]) {
+    return [System.Text.Encoding]::UTF8.GetString([byte[]]$Content)
+  }
+
+  return [string]$Content
+}
 
 function Test-CodexCandidate {
   param([string]$Path)
@@ -90,7 +100,9 @@ function Install-CodexCli {
 
     try {
       $response = Invoke-WebRequest -UseBasicParsing -Uri 'https://chatgpt.com/codex/install.ps1' -TimeoutSec 60
-      Invoke-Expression ([string]$response.Content)
+      $installerScript = Convert-WebResponseContentToText $response.Content
+      if ([string]::IsNullOrWhiteSpace($installerScript)) { throw 'OpenAI 官方安装器返回了空内容。' }
+      Invoke-Expression $installerScript
     } catch {
       Write-Host ''
       Write-Host ('OpenAI 官方安装器执行失败: ' + $_.Exception.Message) -ForegroundColor Yellow

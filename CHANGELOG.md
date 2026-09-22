@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1 - 2026-09-22
+
+- Fixed Codex CLI auto-install on Windows PowerShell 5.1 when OpenAI's official installer response is returned as a byte array.
+- Explicitly decodes byte-array and stream responses as UTF-8 before executing the official installer script.
+- Added regression coverage that verifies installer content beginning with `[CmdletBinding()]` is not converted into decimal byte values such as `91 67 109...`.
+
+
 ## 0.7.0 - 2026-09-22
 
 - Added opt-in cross-device notifications for completed Codex turns.
