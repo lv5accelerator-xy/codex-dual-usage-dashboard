@@ -149,7 +149,7 @@ function Read-RemoteTailText {
   $stream = $null
   $reader = $null
   try {
-    $stream = New-Object System.IO.FileStream -ArgumentList $Path,[System.IO.FileMode]::Open,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite
+    $stream = [System.IO.File]::Open($Path,[System.IO.FileMode]::Open,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
     $start = [Math]::Max(0,$stream.Length - $MaxBytes)
     [void]$stream.Seek($start,[System.IO.SeekOrigin]::Begin)
     $reader = New-Object System.IO.StreamReader -ArgumentList $stream,(New-Object System.Text.UTF8Encoding($false,$false)),$true,4096,$true
@@ -170,7 +170,7 @@ function Get-RemoteProjectName {
   $stream = $null
   $reader = $null
   try {
-    $stream = New-Object System.IO.FileStream -ArgumentList $Path,[System.IO.FileMode]::Open,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite
+    $stream = [System.IO.File]::Open($Path,[System.IO.FileMode]::Open,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
     $reader = New-Object System.IO.StreamReader -ArgumentList $stream,(New-Object System.Text.UTF8Encoding($false,$false)),$true,4096,$true
     for ($i = 0; $i -lt 40 -and -not $reader.EndOfStream; $i++) {
       $line = $reader.ReadLine()
