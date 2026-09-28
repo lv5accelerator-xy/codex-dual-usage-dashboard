@@ -2,7 +2,7 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.7.0**
+Current version: **v0.8.0**
 
 ## Windows EXE client (recommended)
 
@@ -41,6 +41,32 @@ Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File desktop/build.ps1` 
 GitHub Actions validates the source UI, builds the EXE, runs the packaged UI plus migration/integrity tests, and publishes a GitHub Release when `VERSION` is new. Published version assets are immutable: increment `VERSION` for each release. No developer API key or signing secret is required for the current unsigned build.
 
 [Icon design and source assets](assets/README.md)
+
+## iPhone / Mobile Dashboard
+
+v0.8.0 adds **Codex Usage Mobile**, a small installable PWA for viewing Personal and Work quota from an iPhone. Windows remains the only component that reads Codex. It publishes an allowlisted usage snapshot through a separate encrypted ntfy topic; the browser authenticates and decrypts it locally.
+
+### First-time setup
+
+1. On Windows, right-click Codex 额度 and open **远程通知与手机额度**.
+2. Check **启用手机额度同步**, generate or enter a pairing key, save, and copy the pairing key.
+3. In this repository, enable GitHub Pages with **Settings → Pages → Source → GitHub Actions**. The expected site is `https://lv5accelerator-xy.github.io/codex-dual-usage-dashboard/`.
+4. Open that HTTPS address in iPhone Safari, enter the relay address and pairing key, then tap **连接**.
+5. In Safari choose **分享 → 添加到主屏幕 → 添加**. Open **Codex 额度** from the new icon.
+
+The iPhone never receives Codex `auth.json`, access/refresh tokens, cookies, account IDs, Codex profile paths, session logs, or conversation content. The pairing key is stored in `localStorage` only when **在此设备记住配对密钥** is selected; otherwise it is kept for the current browser session only. It is never placed in the URL. If a phone is lost, generate a new pairing key on Windows and save it so the old phone cannot decrypt new snapshots.
+
+[面向非开发人员的 iPhone 使用方法](docs/IPHONE.md) · [Mobile security review](docs/MOBILE-SECURITY.md) · [PWA developer notes](mobile/README.md)
+
+The mobile refresh button fetches the latest relay snapshot. It does not remotely command the Windows computer or log in to Codex. The PWA shell works offline, but quota snapshots are not persisted by the service worker.
+
+## v0.8.0: encrypted iPhone quota PWA
+
+- Adds an opt-in, independently controlled mobile usage sync that can run without completion notifications.
+- Reuses the v1 AES-256-CBC + HMAC-SHA256 message format while deriving a separate non-guessable usage topic.
+- Queues a strictly allowlisted snapshot atomically after desktop refresh; the background worker handles network I/O, duplicate suppression, five-minute heartbeat, and retry backoff.
+- Adds a zero-dependency installable PWA with latest-message polling, EventSource updates, foreground recovery, local countdowns, freshness/offline states, and an offline app shell.
+- Adds GitHub Pages deployment plus PowerShell/JavaScript compatibility and privacy regressions.
 
 ## v0.7.0: cross-device Codex completion notifications
 
@@ -183,6 +209,9 @@ The smoke test does not start a quota worker, log in, or modify saved UI setting
 - `ui-behavior.ps1` — edge snapping and notification crossing/deduplication rules
 - `ui-controls.cs` — small native WinForms drawing controls compiled by PowerShell at startup
 - `usage-reader.ps1` / `usage-worker.ps1` — existing quota reader and background worker
+- `remote-crypto.ps1` / `mobile-sync.ps1` — shared message crypto and allowlisted mobile snapshot queue
+- `remote-worker.ps1` — completion relay plus asynchronous mobile snapshot publishing
+- `mobile/` — static iPhone PWA; no Node.js runtime dependency
 - `codex-tools.ps1` / `setup-account.ps1` — CLI discovery and account login
 - `profiles.json` — account labels and local profile paths
 - `launcher.ps1` — encoding normalization, syntax check, startup watchdog
@@ -192,7 +221,7 @@ The v0.3.9 runtime display patch has been removed. The launcher runs the checked
 
 ## Security
 
-Authentication stays in the user's local Codex profile directories. Never commit login credentials. Logs, runtime results, UI preferences, test screenshots, and local Codex profiles are ignored by Git.
+Authentication stays in the user's local Codex profile directories. Never commit login credentials. Logs, runtime results, remote settings, pending mobile snapshots, UI preferences, test screenshots, and local Codex profiles are ignored by Git. The public Pages bundle contains only the app shell and no pairing key, topic, account data, or credentials.
 
 ## GitHub ZIP downloads
 

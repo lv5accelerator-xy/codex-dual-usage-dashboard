@@ -38,6 +38,8 @@ $script:RefreshStarted = $null
 $script:RefreshIntervalMs = 60000
 $script:UiScale = 1.0
 . (Join-Path $script:Root 'ui-model.ps1')
+. (Join-Path $script:Root 'remote-crypto.ps1')
+. (Join-Path $script:Root 'mobile-sync.ps1')
 . (Join-Path $script:Root 'ui-behavior.ps1')
 $script:AlertState = @{}
 $script:AlertBaselinePending = $true
@@ -75,7 +77,7 @@ function Show-FatalError {
 }
 
 try {
-  Write-TrayLog '===== v0.7.0 tray starting ====='
+  Write-TrayLog '===== Codex Usage tray starting ====='
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
   if (-not ('CodexUsage.Surface' -as [type])) {
@@ -741,6 +743,8 @@ try {
       $script:LastData = Merge-DisplayData -Previous $script:LastData -Incoming $payload.data
       $script:RefreshError = ''
       Process-QuotaNotifications $payload.data
+      try { [void](Write-MobileUsagePending -Data $script:LastData -Settings $script:RemoteSettings -Path $script:MobileUsagePendingPath) }
+      catch { Write-TrayLog ('Mobile snapshot queue warning: ' + $_.Exception.Message) }
       Render-Data $script:LastData
       Write-TrayLog 'Refresh result rendered.'
     } catch {
@@ -1133,7 +1137,7 @@ try {
   $itemTopMost.Checked = [bool]$script:UiSettings.topMost
   $itemAccounts = $menu.Items.Add('账号与首次使用')
   $itemAccounts.Add_Click({ Show-AccountSettings })
-  $itemRemote = $menu.Items.Add('跨电脑 Codex 完成通知')
+  $itemRemote = $menu.Items.Add('远程通知与手机额度')
   $itemRemote.Add_Click({ Show-RemoteNotificationSettings })
   $itemStartup = $menu.Items.Add('开机启动')
   $itemStartup.CheckOnClick = $true

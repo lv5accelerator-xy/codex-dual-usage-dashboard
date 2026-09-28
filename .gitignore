@@ -3,6 +3,14 @@ logs/
 *.log
 usage-result.json
 ui-settings.json
+remote-notifications.json
+remote-inbox.jsonl
+remote-notified.json
+remote-worker-status.json
+remote-test.request
+mobile-usage-pending.json
+mobile-usage-status.json
+mobile-usage-state.json
 
 # Local archives / temp files
 *.zip

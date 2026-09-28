@@ -1,0 +1,41 @@
+name: Deploy Mobile PWA to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v5
+      - name: Verify the Pages artifact contains static shell files only
+        shell: bash
+        run: |
+          test -f mobile/index.html
+          test -f mobile/manifest.webmanifest
+          test -f mobile/sw.js
+          ! grep -R -E 'accessToken|refreshToken|auth\.json|codexHome|accountId' mobile --exclude=README.md
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: mobile
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

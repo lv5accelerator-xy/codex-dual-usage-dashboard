@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 - 2026-09-28
+
+- Added the installable Codex Usage Mobile PWA for iPhone, iPad, and desktop browsers.
+- Added an independent `usageSyncEnabled` setting, separate hashed usage topic, allowlisted mobile display model, atomic pending snapshot, duplicate suppression, five-minute heartbeat, and bounded network retry backoff.
+- Extracted the existing completion-message cryptography into a shared PowerShell module without changing its topic or AES-256-CBC + HMAC-SHA256 wire format.
+- Added Web Crypto authentication/decryption, ntfy latest polling and EventSource updates, foreground reconnect, local reset countdowns, stale/offline states, and a non-sensitive offline shell.
+- Added GitHub Pages deployment, Chinese iPhone setup documentation, a threat review, and cross-runtime PowerShell/JavaScript security fixtures.
+
 ## 0.7.1 - 2026-09-22
 
 - Fixed Codex CLI auto-install on Windows PowerShell 5.1 when OpenAI's official installer response is returned as a byte array.
