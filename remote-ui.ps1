@@ -4,6 +4,8 @@ $script:RemoteInboxPath = Join-Path $script:DataRoot 'remote-inbox.jsonl'
 $script:RemoteStatusPath = Join-Path $script:DataRoot 'remote-worker-status.json'
 $script:RemoteNotifiedPath = Join-Path $script:DataRoot 'remote-notified.json'
 $script:RemoteTestRequestPath = Join-Path $script:DataRoot 'remote-test.request'
+$script:MobileUsageStatusPath = Join-Path $script:DataRoot 'mobile-usage-status.json'
+$script:MobileUsagePendingPath = Join-Path $script:DataRoot 'mobile-usage-pending.json'
 $script:RemoteWorkerProcess = $null
 $script:RemoteSettings = $null
 $script:RemoteNotified = New-Object 'System.Collections.Generic.HashSet[string]' -ArgumentList ([StringComparer]::Ordinal)
@@ -19,6 +21,7 @@ function New-RemotePairKey {
 function Get-DefaultRemoteSettings {
   return [pscustomobject]@{
     enabled = $false
+    usageSyncEnabled = $false
     deviceId = [Guid]::NewGuid().ToString('N')
     deviceName = $env:COMPUTERNAME
     pairKey = ''
@@ -57,7 +60,7 @@ function Load-RemoteSettings {
     $loaded = Get-DefaultRemoteSettings
     Save-RemoteSettings $loaded
   }
-  foreach ($name in @('enabled','deviceId','deviceName','pairKey','includeSummary','relayUrl')) {
+  foreach ($name in @('enabled','usageSyncEnabled','deviceId','deviceName','pairKey','includeSummary','relayUrl')) {
     if ($loaded.PSObject.Properties.Name -notcontains $name) {
       $defaults = Get-DefaultRemoteSettings
       $loaded | Add-Member -NotePropertyName $name -NotePropertyValue $defaults.$name -Force
@@ -95,7 +98,7 @@ function Stop-RemoteWorker {
 }
 
 function Start-RemoteWorker {
-  if ($SmokeTest -or $script:Exiting -or $null -eq $script:RemoteSettings -or -not [bool]$script:RemoteSettings.enabled) { return }
+  if ($SmokeTest -or $script:Exiting -or $null -eq $script:RemoteSettings -or (-not [bool]$script:RemoteSettings.enabled -and -not [bool]$script:RemoteSettings.usageSyncEnabled)) { return }
   if ([string]::IsNullOrWhiteSpace([string]$script:RemoteSettings.pairKey)) { return }
   if ($null -ne $script:RemoteWorkerProcess) {
     try { if (-not $script:RemoteWorkerProcess.HasExited) { return } } catch {}
@@ -138,6 +141,18 @@ function Get-RemoteWorkerStatusText {
   return '正在启动监听…'
 }
 
+function Get-MobileUsageStatusText {
+  if ($null -eq $script:RemoteSettings -or -not [bool]$script:RemoteSettings.usageSyncEnabled) { return '未启用' }
+  if ([string]::IsNullOrWhiteSpace([string]$script:RemoteSettings.pairKey)) { return '需要配对密钥' }
+  try {
+    if (Test-Path -LiteralPath $script:MobileUsageStatusPath) {
+      $status = Get-Content -LiteralPath $script:MobileUsageStatusPath -Raw -Encoding UTF8 | ConvertFrom-Json
+      return [string]$status.message
+    }
+  } catch {}
+  return '正在启动同步…'
+}
+
 function Process-RemoteInbox {
   if ($SmokeTest -or -not (Test-Path -LiteralPath $script:RemoteInboxPath)) { return }
   try {
@@ -169,17 +184,17 @@ function Update-RemoteNotifications {
   $now = [DateTimeOffset]::UtcNow
   if (($now - $script:RemoteLastEnsure).TotalSeconds -lt 5) { return }
   $script:RemoteLastEnsure = $now
-  if ($null -ne $script:RemoteSettings -and [bool]$script:RemoteSettings.enabled) { Start-RemoteWorker }
+  if ($null -ne $script:RemoteSettings -and ([bool]$script:RemoteSettings.enabled -or [bool]$script:RemoteSettings.usageSyncEnabled)) { Start-RemoteWorker }
 }
 
 function Show-RemoteNotificationSettings {
   if ($SmokeTest) { return }
   $dialog = New-Object CodexUsage.DpiForm
   $dialog.DisplayDpi = $script:Popup.DisplayDpi
-  $dialog.Text = '跨电脑 Codex 完成通知'
+  $dialog.Text = '远程通知与手机额度'
   $dialog.Icon = $script:AppIcon
   $dialog.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterParent
-  $dialog.ClientSize = New-Object System.Drawing.Size -ArgumentList (U 540),(U 430)
+  $dialog.ClientSize = New-Object System.Drawing.Size -ArgumentList (U 560),(U 610)
   $dialog.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
   $dialog.MaximizeBox = $false
   $dialog.MinimizeBox = $false
@@ -190,45 +205,65 @@ function Show-RemoteNotificationSettings {
   $enabled = New-Object System.Windows.Forms.CheckBox
   $enabled.Text = '启用跨电脑完成通知'
   $enabled.Checked = [bool]$script:RemoteSettings.enabled
-  $enabled.SetBounds((U 20),(U 18),(U 260),(U 30))
+  $enabled.SetBounds((U 20),(U 14),(U 260),(U 28))
+
+  $usageEnabled = New-Object System.Windows.Forms.CheckBox
+  $usageEnabled.Text = '启用手机额度同步'
+  $usageEnabled.Checked = [bool]$script:RemoteSettings.usageSyncEnabled
+  $usageEnabled.SetBounds((U 20),(U 46),(U 260),(U 28))
+
+  $mobilePrivacy = New-Label -Text '手机端只显示当前额度；Codex 登录凭证不会离开本机。' -Size 9 -Muted
+  $mobilePrivacy.Dock='None'; $mobilePrivacy.SetBounds((U 42),(U 74),(U 490),(U 28))
 
   $nameLabel = New-Label -Text '本机名称' -Size 9 -Muted
-  $nameLabel.Dock='None'; $nameLabel.SetBounds((U 20),(U 64),(U 100),(U 28))
+  $nameLabel.Dock='None'; $nameLabel.SetBounds((U 20),(U 112),(U 100),(U 28))
   $name = New-Object System.Windows.Forms.TextBox
   $name.Text = [string]$script:RemoteSettings.deviceName
   $name.MaxLength = 40
-  $name.SetBounds((U 130),(U 62),(U 380),(U 30))
+  $name.SetBounds((U 130),(U 110),(U 400),(U 30))
 
   $keyLabel = New-Label -Text '配对密钥' -Size 9 -Muted
-  $keyLabel.Dock='None'; $keyLabel.SetBounds((U 20),(U 108),(U 100),(U 28))
+  $keyLabel.Dock='None'; $keyLabel.SetBounds((U 20),(U 154),(U 100),(U 28))
   $key = New-Object System.Windows.Forms.TextBox
   $key.Text = [string]$script:RemoteSettings.pairKey
-  $key.SetBounds((U 130),(U 106),(U 270),(U 30))
+  $key.SetBounds((U 130),(U 152),(U 200),(U 30))
   $generate = New-Button '生成'
-  $generate.Dock='None'; $generate.SetBounds((U 410),(U 106),(U 100),(U 30))
+  $generate.Dock='None'; $generate.SetBounds((U 338),(U 152),(U 86),(U 30))
   $generate.Add_Click({ $key.Text = New-RemotePairKey })
+  $copyKey = New-Button '复制密钥'
+  $copyKey.Dock='None'; $copyKey.SetBounds((U 432),(U 152),(U 98),(U 30))
+  $copyKey.Add_Click({ if (-not [string]::IsNullOrWhiteSpace($key.Text)) { [System.Windows.Forms.Clipboard]::SetText($key.Text.Trim()) } })
 
   $summary = New-Object System.Windows.Forms.CheckBox
   $summary.Text = '通知中包含 Codex 最终回复摘要（最多 800 字）'
   $summary.Checked = [bool]$script:RemoteSettings.includeSummary
-  $summary.SetBounds((U 130),(U 150),(U 380),(U 30))
+  $summary.SetBounds((U 130),(U 190),(U 400),(U 30))
 
   $relayLabel = New-Label -Text '中继地址' -Size 9 -Muted
-  $relayLabel.Dock='None'; $relayLabel.SetBounds((U 20),(U 194),(U 100),(U 28))
+  $relayLabel.Dock='None'; $relayLabel.SetBounds((U 20),(U 230),(U 100),(U 28))
   $relay = New-Object System.Windows.Forms.TextBox
   $relay.Text = [string]$script:RemoteSettings.relayUrl
-  $relay.SetBounds((U 130),(U 192),(U 380),(U 30))
+  $relay.SetBounds((U 130),(U 228),(U 400),(U 30))
 
   $privacy = New-Label -Text '两台电脑填写同一配对密钥即可互相通知。消息正文会先在本机加密；默认只发送设备名、项目名、状态与时间。' -Size 9 -Muted
-  $privacy.Dock='None'; $privacy.SetBounds((U 20),(U 238),(U 490),(U 56))
+  $privacy.Dock='None'; $privacy.SetBounds((U 20),(U 270),(U 510),(U 52))
 
   $statusLabel = New-Label -Text ('状态：' + (Get-RemoteWorkerStatusText)) -Size 9 -Muted
-  $statusLabel.Dock='None'; $statusLabel.SetBounds((U 20),(U 300),(U 490),(U 30))
+  $statusLabel.Dock='None'; $statusLabel.SetBounds((U 20),(U 326),(U 510),(U 28))
+  $mobileStatusLabel = New-Label -Text ('手机同步：' + (Get-MobileUsageStatusText)) -Size 9 -Muted
+  $mobileStatusLabel.Dock='None'; $mobileStatusLabel.SetBounds((U 20),(U 356),(U 510),(U 28))
+
+  $mobileUrl = 'https://lv5accelerator-xy.github.io/codex-dual-usage-dashboard/'
+  $copyUrl = New-Button '复制手机端地址'
+  $copyUrl.Dock='None'; $copyUrl.SetBounds((U 20),(U 398),(U 170),(U 34))
+  $copyUrl.Add_Click({ [System.Windows.Forms.Clipboard]::SetText($mobileUrl) })
+  $urlNote = New-Label -Text '密钥不会加入地址；请在手机设置页手动输入。' -Size 9 -Muted
+  $urlNote.Dock='None'; $urlNote.SetBounds((U 204),(U 400),(U 326),(U 30))
 
   $test = New-Button '发送测试通知'
-  $test.Dock='None'; $test.SetBounds((U 20),(U 362),(U 140),(U 36))
+  $test.Dock='None'; $test.SetBounds((U 20),(U 490),(U 150),(U 36))
   $save = New-Button '保存'
-  $save.Dock='None'; $save.SetBounds((U 390),(U 362),(U 120),(U 36))
+  $save.Dock='None'; $save.SetBounds((U 400),(U 548),(U 130),(U 36))
 
   $test.Add_Click({
     if (-not [bool]$script:RemoteSettings.enabled -or [string]::IsNullOrWhiteSpace([string]$script:RemoteSettings.pairKey)) {
@@ -241,16 +276,18 @@ function Show-RemoteNotificationSettings {
 
   $save.Add_Click({
     try {
+      $wasUsageEnabled = [bool]$script:RemoteSettings.usageSyncEnabled
       $deviceName = $name.Text.Trim()
       $pairKey = $key.Text.Trim()
       $relayUrl = $relay.Text.Trim()
       if ([string]::IsNullOrWhiteSpace($deviceName)) { throw '本机名称不能为空。' }
-      if ($enabled.Checked -and $pairKey.Length -lt 12) { throw '启用时配对密钥至少需要 12 个字符。' }
+      if (($enabled.Checked -or $usageEnabled.Checked) -and $pairKey.Length -lt 12) { throw '启用远程功能时，配对密钥至少需要 12 个字符。' }
       $uri = $null
       if (-not [Uri]::TryCreate($relayUrl,[UriKind]::Absolute,[ref]$uri)) { throw '中继地址无效。' }
       if ($uri.Scheme -ne 'https' -and -not ($uri.Scheme -eq 'http' -and $uri.IsLoopback)) { throw '中继地址必须使用 HTTPS；只有 localhost 可用 HTTP。' }
       $copy = [pscustomobject]@{
         enabled = [bool]$enabled.Checked
+        usageSyncEnabled = [bool]$usageEnabled.Checked
         deviceId = [string]$script:RemoteSettings.deviceId
         deviceName = $deviceName
         pairKey = $pairKey
@@ -259,13 +296,16 @@ function Show-RemoteNotificationSettings {
       }
       Save-RemoteSettings $copy
       $script:RemoteSettings = $copy
+      if ([bool]$copy.usageSyncEnabled -and -not $wasUsageEnabled) { Remove-Item -LiteralPath (Join-Path $script:DataRoot 'mobile-usage-state.json') -Force -ErrorAction SilentlyContinue }
+      if ($null -ne $script:LastData) { [void](Write-MobileUsagePending -Data $script:LastData -Settings $copy -Path $script:MobileUsagePendingPath) }
       Restart-RemoteWorker
       $dialog.Close()
     } catch { [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'无法保存跨电脑通知') }
   })
 
   $dialog.Controls.AddRange([System.Windows.Forms.Control[]]@(
-    $enabled,$nameLabel,$name,$keyLabel,$key,$generate,$summary,$relayLabel,$relay,$privacy,$statusLabel,$test,$save
+    $enabled,$usageEnabled,$mobilePrivacy,$nameLabel,$name,$keyLabel,$key,$generate,$copyKey,$summary,$relayLabel,$relay,
+    $privacy,$statusLabel,$mobileStatusLabel,$copyUrl,$urlNote,$test,$save
   ))
   try { [void]$dialog.ShowDialog($script:Popup) } finally { $dialog.Dispose() }
 }

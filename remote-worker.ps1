@@ -9,6 +9,13 @@ $script:RemoteInboxPath = Join-Path $DataRoot 'remote-inbox.jsonl'
 $script:RemoteStatusPath = Join-Path $DataRoot 'remote-worker-status.json'
 $script:RemoteTestRequestPath = Join-Path $DataRoot 'remote-test.request'
 $script:RemoteLogPath = Join-Path (Join-Path $DataRoot 'logs') 'remote-worker.log'
+$script:MobilePendingPath = Join-Path $DataRoot 'mobile-usage-pending.json'
+$script:MobileStatusPath = Join-Path $DataRoot 'mobile-usage-status.json'
+$script:MobileStatePath = Join-Path $DataRoot 'mobile-usage-state.json'
+$script:Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $script:Root 'remote-crypto.ps1')
+. (Join-Path $script:Root 'ui-model.ps1')
+. (Join-Path $script:Root 'mobile-sync.ps1')
 
 function Write-RemoteWorkerLog {
   param([string]$Message)
@@ -22,101 +29,23 @@ function Write-RemoteWorkerLog {
 function Write-RemoteStatus {
   param([string]$State,[string]$Message)
   try {
-    $payload = [ordered]@{
+    Write-AtomicUtf8Json -Path $script:RemoteStatusPath -Value ([ordered]@{
       state = $State
       message = $Message
       updatedAt = [DateTimeOffset]::UtcNow.ToString('o')
-    } | ConvertTo-Json -Depth 4
-    $tmp = $script:RemoteStatusPath + '.tmp'
-    [System.IO.File]::WriteAllText($tmp,$payload,(New-Object System.Text.UTF8Encoding($false)))
-    if (Test-Path -LiteralPath $script:RemoteStatusPath) {
-      [System.IO.File]::Replace($tmp,$script:RemoteStatusPath,$null)
-    } else {
-      [System.IO.File]::Move($tmp,$script:RemoteStatusPath)
-    }
+    }) -Depth 4
   } catch {}
 }
 
-function Get-Sha256Bytes {
-  param([Parameter(Mandatory = $true)][string]$Text)
-  $sha = [System.Security.Cryptography.SHA256]::Create()
-  try { return $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text)) }
-  finally { $sha.Dispose() }
-}
-
-function Convert-BytesToHex {
-  param([byte[]]$Bytes)
-  return ([BitConverter]::ToString($Bytes)).Replace('-','').ToLowerInvariant()
-}
-
-function Get-RemoteTopic {
-  param([Parameter(Mandatory = $true)][string]$PairKey)
-  $hex = Convert-BytesToHex (Get-Sha256Bytes ('codex-remote-topic-v1|' + $PairKey))
-  return 'codex-' + $hex.Substring(0,48)
-}
-
-function Test-ByteArraysEqual {
-  param([byte[]]$Left,[byte[]]$Right)
-  if ($null -eq $Left -or $null -eq $Right -or $Left.Length -ne $Right.Length) { return $false }
-  $diff = 0
-  for ($i = 0; $i -lt $Left.Length; $i++) { $diff = $diff -bor ($Left[$i] -bxor $Right[$i]) }
-  return $diff -eq 0
-}
-
-function Protect-RemoteMessage {
-  param([Parameter(Mandatory = $true)][string]$PlainText,[Parameter(Mandatory = $true)][string]$PairKey)
-  $encKey = Get-Sha256Bytes ('codex-remote-enc-v1|' + $PairKey)
-  $macKey = Get-Sha256Bytes ('codex-remote-mac-v1|' + $PairKey)
-  $aes = New-Object System.Security.Cryptography.AesManaged
-  $aes.KeySize = 256
-  $aes.BlockSize = 128
-  $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
-  $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
-  $aes.Key = $encKey
-  $aes.GenerateIV()
-  $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
-  $encryptor = $aes.CreateEncryptor()
-  try { $cipher = $encryptor.TransformFinalBlock($plainBytes,0,$plainBytes.Length) }
-  finally { $encryptor.Dispose() }
-  $body = New-Object byte[] ($aes.IV.Length + $cipher.Length)
-  [Array]::Copy($aes.IV,0,$body,0,$aes.IV.Length)
-  [Array]::Copy($cipher,0,$body,$aes.IV.Length,$cipher.Length)
-  $hmac = New-Object System.Security.Cryptography.HMACSHA256 -ArgumentList (,$macKey)
-  try { $tag = $hmac.ComputeHash($body) } finally { $hmac.Dispose(); $aes.Dispose() }
-  $package = New-Object byte[] ($body.Length + $tag.Length)
-  [Array]::Copy($body,0,$package,0,$body.Length)
-  [Array]::Copy($tag,0,$package,$body.Length,$tag.Length)
-  return [Convert]::ToBase64String($package)
-}
-
-function Unprotect-RemoteMessage {
-  param([Parameter(Mandatory = $true)][string]$CipherText,[Parameter(Mandatory = $true)][string]$PairKey)
-  $package = [Convert]::FromBase64String($CipherText)
-  if ($package.Length -lt 65) { throw 'Remote payload is too short.' }
-  $bodyLength = $package.Length - 32
-  $body = New-Object byte[] $bodyLength
-  $tag = New-Object byte[] 32
-  [Array]::Copy($package,0,$body,0,$bodyLength)
-  [Array]::Copy($package,$bodyLength,$tag,0,32)
-  $macKey = Get-Sha256Bytes ('codex-remote-mac-v1|' + $PairKey)
-  $hmac = New-Object System.Security.Cryptography.HMACSHA256 -ArgumentList (,$macKey)
-  try { $expected = $hmac.ComputeHash($body) } finally { $hmac.Dispose() }
-  if (-not (Test-ByteArraysEqual $tag $expected)) { throw 'Remote payload authentication failed.' }
-  $iv = New-Object byte[] 16
-  $cipher = New-Object byte[] ($body.Length - 16)
-  [Array]::Copy($body,0,$iv,0,16)
-  [Array]::Copy($body,16,$cipher,0,$cipher.Length)
-  $aes = New-Object System.Security.Cryptography.AesManaged
-  $aes.KeySize = 256
-  $aes.BlockSize = 128
-  $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
-  $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
-  $aes.Key = Get-Sha256Bytes ('codex-remote-enc-v1|' + $PairKey)
-  $aes.IV = $iv
-  $decryptor = $aes.CreateDecryptor()
-  try { $plain = $decryptor.TransformFinalBlock($cipher,0,$cipher.Length) }
-  finally { $decryptor.Dispose(); $aes.Dispose() }
-  return [System.Text.Encoding]::UTF8.GetString($plain)
+function Write-MobileUsageStatus {
+  param([string]$State,[string]$Message)
+  try {
+    Write-AtomicUtf8Json -Path $script:MobileStatusPath -Value ([ordered]@{
+      state = $State
+      message = $Message
+      updatedAt = [DateTimeOffset]::UtcNow.ToString('o')
+    }) -Depth 4
+  } catch {}
 }
 
 function Resolve-RemoteCodexHome {
@@ -254,6 +183,21 @@ function Publish-RemoteEvent {
   [void](Invoke-WebRequest -UseBasicParsing -Method Post -Uri $uri -Body $cipher -ContentType 'text/plain; charset=utf-8' -TimeoutSec 12)
 }
 
+function Publish-MobileUsageSnapshot {
+  param($Settings,$Snapshot)
+  $topic = Get-MobileUsageTopic ([string]$Settings.pairKey)
+  $relay = Get-RemoteRelayUrl $Settings
+  $json = $Snapshot | ConvertTo-Json -Compress -Depth 12
+  $cipher = Protect-RemoteMessage -PlainText $json -PairKey ([string]$Settings.pairKey)
+  [void](Invoke-WebRequest -UseBasicParsing -Method Post -Uri ($relay + '/' + $topic) -Body $cipher -ContentType 'text/plain; charset=utf-8' -TimeoutSec 12)
+}
+
+function Load-MobileUsageState {
+  if (-not (Test-Path -LiteralPath $script:MobileStatePath)) { return $null }
+  try { return Get-Content -LiteralPath $script:MobileStatePath -Raw -Encoding UTF8 | ConvertFrom-Json }
+  catch { Write-RemoteWorkerLog ('Mobile state read warning: ' + $_.Exception.Message); return $null }
+}
+
 function Append-RemoteInboxEvent {
   param($Event)
   $line = $Event | ConvertTo-Json -Compress -Depth 8
@@ -297,6 +241,13 @@ function Load-RemoteWorkerSettings {
   catch { Write-RemoteWorkerLog ('Settings read warning: ' + $_.Exception.Message); return $null }
 }
 
+function Test-RemoteWorkerSettingsEnabled {
+  param($Settings)
+  return ($null -ne $Settings -and ([bool]$Settings.enabled -or [bool]$Settings.usageSyncEnabled) -and
+    -not [string]::IsNullOrWhiteSpace([string]$Settings.pairKey) -and
+    -not [string]::IsNullOrWhiteSpace([string]$Settings.deviceId))
+}
+
 function New-RemoteWatcher {
   param([string]$SessionsPath,[string]$Id)
   if (-not (Test-Path -LiteralPath $SessionsPath)) { return $null }
@@ -317,8 +268,9 @@ if ($LibraryOnly) { return }
 
 if (-not (Test-Path -LiteralPath $DataRoot)) { New-Item -ItemType Directory -Force -Path $DataRoot | Out-Null }
 $settings = Load-RemoteWorkerSettings
-if ($null -eq $settings -or -not [bool]$settings.enabled -or [string]::IsNullOrWhiteSpace([string]$settings.pairKey) -or [string]::IsNullOrWhiteSpace([string]$settings.deviceId)) {
-  Write-RemoteStatus 'disabled' '跨电脑通知未启用'
+if (-not (Test-RemoteWorkerSettingsEnabled $settings)) {
+  Write-RemoteStatus 'disabled' '远程功能未启用'
+  Write-MobileUsageStatus 'disabled' '手机额度同步未启用'
   exit 0
 }
 
@@ -330,14 +282,20 @@ $lastFallback = [DateTimeOffset]::MinValue
 $lastRelayPoll = [DateTimeOffset]::MinValue
 $lastSettingsWrite = (Get-Item -LiteralPath $script:RemoteSettingsPath).LastWriteTimeUtc
 $lastCandidateWrite = @{}
+$mobileState = Load-MobileUsageState
+$nextMobileAttempt = [DateTimeOffset]::MinValue
+$mobileFailureCount = 0
 
 try {
-  foreach ($home in @(Get-RemoteCodexHomes)) {
-    $sessions = Join-Path $home 'sessions'
-    $watch = New-RemoteWatcher -SessionsPath $sessions -Id ([Guid]::NewGuid().ToString('N'))
-    if ($null -ne $watch) { $watchers += $watch; Write-RemoteWorkerLog ('Watching ' + $sessions) }
+  if ([bool]$settings.enabled) {
+    foreach ($home in @(Get-RemoteCodexHomes)) {
+      $sessions = Join-Path $home 'sessions'
+      $watch = New-RemoteWatcher -SessionsPath $sessions -Id ([Guid]::NewGuid().ToString('N'))
+      if ($null -ne $watch) { $watchers += $watch; Write-RemoteWorkerLog ('Watching ' + $sessions) }
+    }
+    Write-RemoteStatus 'running' ('正在监听 Codex 完成事件 · ' + [string]$settings.deviceName)
   }
-  Write-RemoteStatus 'running' ('正在监听 Codex 完成事件 · ' + [string]$settings.deviceName)
+  if ([bool]$settings.usageSyncEnabled) { Write-MobileUsageStatus 'waiting' '等待电脑生成额度快照…' }
   while ($true) {
     Start-Sleep -Milliseconds 700
 
@@ -350,19 +308,21 @@ try {
     } catch { break }
 
     $paths = New-Object 'System.Collections.Generic.HashSet[string]' -ArgumentList ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($entry in $watchers) {
-      foreach ($sourceId in $entry.ids) {
-        foreach ($evt in @(Get-Event -SourceIdentifier $sourceId -ErrorAction SilentlyContinue)) {
-          try {
-            $path = [string]$evt.SourceEventArgs.FullPath
-            if (-not [string]::IsNullOrWhiteSpace($path)) { [void]$paths.Add($path) }
-          } finally { Remove-Event -EventIdentifier $evt.EventIdentifier -ErrorAction SilentlyContinue }
+    if ([bool]$settings.enabled) {
+      foreach ($entry in $watchers) {
+        foreach ($sourceId in $entry.ids) {
+          foreach ($evt in @(Get-Event -SourceIdentifier $sourceId -ErrorAction SilentlyContinue)) {
+            try {
+              $path = [string]$evt.SourceEventArgs.FullPath
+              if (-not [string]::IsNullOrWhiteSpace($path)) { [void]$paths.Add($path) }
+            } finally { Remove-Event -EventIdentifier $evt.EventIdentifier -ErrorAction SilentlyContinue }
+          }
         }
       }
     }
 
     $now = [DateTimeOffset]::UtcNow
-    if (($now - $lastFallback).TotalSeconds -ge 12) {
+    if ([bool]$settings.enabled -and ($now - $lastFallback).TotalSeconds -ge 12) {
       $lastFallback = $now
       foreach ($home in @(Get-RemoteCodexHomes)) {
         $sessions = Join-Path $home 'sessions'
@@ -395,7 +355,7 @@ try {
       } catch { Write-RemoteWorkerLog ('Session parse warning: ' + $_.Exception.Message) }
     }
 
-    if (Test-Path -LiteralPath $script:RemoteTestRequestPath) {
+    if ([bool]$settings.enabled -and (Test-Path -LiteralPath $script:RemoteTestRequestPath)) {
       try {
         Remove-Item -LiteralPath $script:RemoteTestRequestPath -Force -ErrorAction SilentlyContinue
         $testEvent = [pscustomobject]@{
@@ -414,7 +374,7 @@ try {
       } catch { Write-RemoteWorkerLog ('Test publish failed: ' + $_.Exception.Message) }
     }
 
-    if (($now - $lastRelayPoll).TotalSeconds -ge 5) {
+    if ([bool]$settings.enabled -and ($now - $lastRelayPoll).TotalSeconds -ge 5) {
       $lastRelayPoll = $now
       try {
         Poll-RemoteRelay -Settings $settings -SeenRelayIds $seenRelayIds
@@ -422,6 +382,33 @@ try {
       } catch {
         Write-RemoteWorkerLog ('Relay poll failed: ' + $_.Exception.Message)
         Write-RemoteStatus 'degraded' '本机监听正常，远程中继暂时不可用'
+      }
+    }
+
+    if ([bool]$settings.usageSyncEnabled -and $now -ge $nextMobileAttempt) {
+      $nextMobileAttempt = $now.AddSeconds(2)
+      if (Test-Path -LiteralPath $script:MobilePendingPath) {
+        try {
+          $snapshot = Get-Content -LiteralPath $script:MobilePendingPath -Raw -Encoding UTF8 | ConvertFrom-Json
+          if ([int]$snapshot.version -ne 1 -or [string]$snapshot.type -ne 'usage_snapshot') { throw 'Invalid mobile snapshot schema.' }
+          $currentHash = Get-MobileUsageSnapshotHash $snapshot
+          $currentTopic = Get-MobileUsageTopic ([string]$settings.pairKey)
+          if (Test-MobileUsagePublishDue -CurrentHash $currentHash -State $mobileState -Now $now -CurrentTopic $currentTopic) {
+            Publish-MobileUsageSnapshot -Settings $settings -Snapshot $snapshot
+            $mobileState = [pscustomobject]@{ lastPublishedHash = $currentHash; lastPublishedAt = $now.ToString('o'); lastPublishedTopic = $currentTopic }
+            Write-AtomicUtf8Json -Path $script:MobileStatePath -Value $mobileState -Depth 4
+            $mobileFailureCount = 0
+            Write-MobileUsageStatus 'running' '同步正常'
+            Write-RemoteWorkerLog 'Published mobile usage snapshot.'
+          }
+        } catch {
+          $mobileFailureCount++
+          $delays = @(5,15,30,60)
+          $delay = $delays[[Math]::Min($mobileFailureCount - 1,$delays.Count - 1)]
+          $nextMobileAttempt = $now.AddSeconds($delay)
+          Write-MobileUsageStatus 'degraded' ('网络错误；约 ' + $delay + ' 秒后重试')
+          Write-RemoteWorkerLog ('Mobile usage publish failed: ' + $_.Exception.Message)
+        }
       }
     }
   }

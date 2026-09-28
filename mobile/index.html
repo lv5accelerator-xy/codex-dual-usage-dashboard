@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111319">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Codex 额度">
+  <meta name="description" content="安全查看 Windows Codex Personal 和 Work 额度">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192">
+  <link rel="stylesheet" href="styles.css">
+  <title>Codex 额度</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">CODEX USAGE</p>
+        <h1>Codex 额度</h1>
+      </div>
+      <div class="top-actions">
+        <span id="connection-pill" class="pill muted" aria-live="polite">未连接</span>
+        <button id="settings-button" class="icon-button" type="button" aria-label="设置">设置</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="setup-view" class="setup-card" aria-labelledby="setup-title">
+        <div class="setup-icon" aria-hidden="true">C</div>
+        <p class="eyebrow">安全配对</p>
+        <h2 id="setup-title">连接 Codex 额度</h2>
+        <p class="supporting">Codex 登录凭证始终保留在你的 Windows 电脑上。手机仅接收经过加密的额度数据。</p>
+        <form id="setup-form" class="settings-form">
+          <label for="relay-input">中继地址</label>
+          <input id="relay-input" name="relay" type="url" inputmode="url" autocomplete="url" value="https://ntfy.sh" required>
+          <label for="pair-key-input">配对密钥</label>
+          <input id="pair-key-input" name="pairKey" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" minlength="12" required>
+          <label class="check-row" for="remember-input">
+            <input id="remember-input" name="remember" type="checkbox">
+            <span>在此设备记住配对密钥</span>
+          </label>
+          <button class="primary-button" type="submit">连接</button>
+        </form>
+        <p id="setup-error" class="form-error" role="alert"></p>
+      </section>
+
+      <section id="dashboard-view" hidden>
+        <div id="state-banner" class="state-banner" aria-live="polite">
+          <span class="state-dot"></span>
+          <div>
+            <strong id="state-title">正在连接…</strong>
+            <span id="state-detail">正在获取最近的额度快照</span>
+          </div>
+        </div>
+        <div id="accounts" class="accounts" aria-live="polite"></div>
+        <div id="empty-state" class="empty-card" hidden>
+          <strong>没有可用账号</strong>
+          <span>请在 Windows 的“账号与首次使用”中启用账号并刷新。</span>
+        </div>
+        <footer class="dashboard-footer">
+          <div>
+            <span>最近同步</span>
+            <strong id="last-sync">等待电脑发送额度…</strong>
+          </div>
+          <button id="refresh-button" class="secondary-button" type="button">刷新</button>
+        </footer>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="settings-dialog" class="settings-dialog">
+    <form id="settings-form" method="dialog" class="settings-form">
+      <div class="dialog-title">
+        <div><p class="eyebrow">本机设置</p><h2>连接设置</h2></div>
+        <button id="close-settings" class="icon-button" type="button" aria-label="关闭">关闭</button>
+      </div>
+      <label for="settings-relay">中继地址</label>
+      <input id="settings-relay" type="url" inputmode="url" autocomplete="url" required>
+      <label for="settings-key">配对密钥</label>
+      <input id="settings-key" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" minlength="12" required>
+      <label class="check-row" for="settings-remember">
+        <input id="settings-remember" type="checkbox">
+        <span>在此设备记住配对密钥</span>
+      </label>
+      <p class="privacy-note">密钥只用于本机推导 topic 和解密。不会加入网址、日志或页面缓存。</p>
+      <button class="primary-button" type="submit">保存并连接</button>
+      <button id="clear-device" class="danger-button" type="button">清除此设备数据</button>
+      <p id="settings-error" class="form-error" role="alert"></p>
+    </form>
+  </dialog>
+
+  <script src="crypto.js" defer></script>
+  <script src="model.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

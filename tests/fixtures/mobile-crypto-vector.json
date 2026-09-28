@@ -1,0 +1,8 @@
+{
+  "pairKey": "test-pair-key-123456789",
+  "plainText": "{\"version\":1,\"type\":\"usage_snapshot\",\"deviceId\":\"test-device\",\"deviceName\":\"Test PC\",\"publishedAt\":\"2026-09-28T12:00:00.0000000Z\",\"profiles\":[{\"id\":\"personal\",\"label\":\"Personal\",\"ok\":true,\"status\":\"ok\",\"fetchedAt\":\"2026-09-28T11:59:30.0000000Z\",\"fiveHour\":{\"kind\":\"5h\",\"label\":\"5 Hours\",\"remainingPercent\":82,\"resetsAt\":\"2026-09-28T14:14:00.0000000Z\"},\"longTerm\":{\"kind\":\"weekly\",\"label\":\"Weekly\",\"remainingPercent\":63,\"resetsAt\":\"2026-10-02T00:00:00.0000000Z\"}}]}",
+  "ivHex": "000102030405060708090a0b0c0d0e0f",
+  "completionTopic": "codex-5f11f05fcb9d672134ecb6e7dd96b43052842939131fe7c4",
+  "usageTopic": "codex-usage-2518b2fb6e820e087e7e7245bc03de50d7994ed755f71245",
+  "cipherText": "AAECAwQFBgcICQoLDA0OD6FtpEzUQ+EcbjXCzYieRr93+7i0IDqkSBbCK+74ukQA7aDIM2gX52zvbFmoSJa6P5HvEXn87J24j9Ge/WXCdTaKbH5hoWz5dF/9vPFc+acHJz0eeg+szNtsEJmgilYRdLQ6w/OFYTxlNCMULKyJb7I+c23M6/8rX6hzutp9BLp5pwunzeUE6HhjI7fJj19X8bOilmHsmpwmMRW9KSJMRNH6+Ssn803cC/KzvG1T2af6xU4VtazOzKa1oPlM0aBqEh6/nOdm21GUsobeRce99Z0vyOkIUy5/amSJsFU1H7DwEUqSmeL0VxSzIDFBCu0f650nBiNnJxbVphR1M8VWoCHCDzMMAlRDBbZ2ziMrGrF0lmXgBfWPQ1sQc64OLACiHI4oDUSL2AnBLY6Yn9WPXqXtpAkDCdmpdTvPpCsfH8y6VVdPSeuYK7RVJ+yM68+ofE+2ganirIDAEpPVzyDwo+uPIUaIo48jwpyMxWEOKVnIS7iaNc+vt+x64ItQ/YNo9MpFok7SGHqDsQlBdyOrLEj5pGL4AcMVACdrWl/InI+wrriwq62dYpPirtucYD2tnT+7B/W9ODXOdoojfWVrYqFCpPlMnV6MixMh4AZSUxC9jRhN25AOybEhuvXvfB/o7sqdXEIxZnCDiq6MwAq6h5d5ZTiwD7T/RDn9EYgmV1ZJ"
+}

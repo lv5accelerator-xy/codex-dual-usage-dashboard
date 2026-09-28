@@ -30,7 +30,16 @@ jobs:
           ./tests/ui-model.tests.ps1
           ./tests/ui-behavior.tests.ps1
           ./tests/remote-notifications.tests.ps1
+          ./tests/mobile-sync.tests.ps1
           ./tests/codex-tools.tests.ps1
+      - name: Validate static mobile PWA and Web Crypto fixtures
+        shell: powershell
+        run: |
+          node --check mobile/crypto.js
+          node --check mobile/model.js
+          node --check mobile/app.js
+          node --check mobile/sw.js
+          node tests/mobile.tests.js
       - name: Render native UI and exercise resize and failure states
         shell: powershell
         run: ./tray.ps1 -SmokeTest
@@ -93,7 +102,7 @@ jobs:
           cat > release-notes.md <<'NOTES'
           Windows 10/11 desktop client. Download **CodexUsage.exe** and double-click it. Confirm “安装并启动” on first launch. Installation is per-user and creates shortcuts; no administrator access is needed. Windows Settings → Apps now includes an uninstall entry that preserves settings and account data.
 
-          v0.7.1 修复部分 Windows PowerShell 5.1 电脑自动安装 Codex CLI 时，把 OpenAI 官方 install.ps1 的 byte[] 响应错误转换成“91 67 109...”数字串并执行失败的问题。现在会先按 UTF-8 正确解码安装脚本，再执行官方安装器；保留 v0.7.0 的跨电脑 Codex 完成通知。
+          v0.8.0 新增安全的 iPhone / Mobile PWA。Windows 端只发送严格脱敏的额度快照，通过独立 ntfy topic 本地加密；手机使用 Web Crypto 验证并解密，不接触 Codex 登录凭证。手机同步可以独立启用，并包含重复抑制、五分钟心跳和网络退避；保留跨电脑完成通知。
 
           后续版本在后台自动检查和下载，右键选择“客户端更新 → 重启并更新”生效，也可退出后自动安装。额度每分钟刷新一次；保留紧凑模式、透明度设置、贴边吸附与低额度通知。
 
