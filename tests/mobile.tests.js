@@ -54,6 +54,10 @@ function check(condition, message) {
   check(!serviceWorker.includes('pairKey') && !serviceWorker.includes('usage_snapshot'), 'Service worker must not cache keys or decrypted snapshots.');
   check(serviceWorker.includes("url.origin !== self.location.origin"), 'Service worker must exclude external relay responses.');
 
+  const mobileApp = fs.readFileSync(path.join(root, 'mobile', 'app.js'), 'utf8');
+  check(mobileApp.includes('/json?poll=1&since=latest'), 'Latest snapshot fetch must request only the newest cached message.');
+  check(!mobileApp.includes('/json?poll=1&since=all'), 'Latest snapshot fetch must not request the full cached history.');
+
   process.stdout.write(`Mobile JavaScript: ${checks} checks passed.\n`);
 })().catch((error) => {
   process.stderr.write(`${error.stack || error}\n`);

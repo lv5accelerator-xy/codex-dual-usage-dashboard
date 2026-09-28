@@ -166,7 +166,7 @@
     elements.refresh.disabled = true;
     setBanner('正在连接…', '正在获取最近的额度快照', 'muted');
     try {
-      const response = await fetch(`${connection.relay}/${connection.topic}/json?poll=1&since=all`, { cache: 'no-store', headers: { Accept: 'application/x-ndjson, application/json' } });
+      const response = await fetch(`${connection.relay}/${connection.topic}/json?poll=1&since=latest`, { cache: 'no-store', headers: { Accept: 'application/x-ndjson, application/json' } });
       if (!response.ok) throw new Error(`relay ${response.status}`);
       const messages = (await response.text()).split(/\r?\n/).filter(Boolean).map((line) => {
         try { return JSON.parse(line); } catch (_) { return null; }
