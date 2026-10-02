@@ -315,10 +315,9 @@ try {
 
   function Set-RingLayout {
     $active = @(Get-ActiveIds)
-    $vertical = $script:UiSettings.dockHorizontal -in @('left','right')
     $count = [Math]::Max(1,$active.Count * 2)
-    $width = if ($vertical) { 76 } else { 8 + 68 * $count }
-    $height = if ($vertical) { 8 + 80 * $count } else { 88 }
+    $width = 60
+    $height = 8 + 68 * $count
     $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (B 4)
     $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (B $width),(B $height)
     $index = 0
@@ -327,9 +326,7 @@ try {
         $ring = $script:RingCells[($id + '-' + $window)]
         $ring.Visible = $id -in $active
         if ($id -notin $active) { continue }
-        $x = if ($vertical) { 0 } else { 68 * $index }
-        $y = if ($vertical) { 80 * $index } else { 0 }
-        $ring.SetBounds((B $x),(B $y),(B 68),(B 80))
+        $ring.SetBounds(0,(B (68 * $index)),(B 52),(B 68))
         $index++
       }
     }

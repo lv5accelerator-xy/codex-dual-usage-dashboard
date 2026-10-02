@@ -257,7 +257,7 @@ if ($env:CODEX_USAGE_CLIENT_VERSION) {
   Remove-Item $script:ClientStatusPath -Force
 }
 
-# Exercise the actual ring controls, all four dock orientations and mode switching.
+# Exercise the actual ring controls, a fixed vertical stack at all four edges and mode switching.
 $script:RefreshError = ''
 $script:LastData = $ringSample
 Render-Data $ringSample
@@ -269,6 +269,8 @@ foreach ($edge in @('left','right','top','bottom')) {
   Set-MonitorExpanded $false
   [System.Windows.Forms.Application]::DoEvents()
   $area = [System.Windows.Forms.Screen]::FromRectangle($script:Ball.Bounds).WorkingArea
+  Assert-Ui ($script:Ball.Width -eq (B 60) -and $script:Ball.Height -eq (B 280)) 'All edges must use the same narrow vertical stack.'
+  Assert-Ui ($script:RingCells['work-long'].Top -gt $script:RingCells['personal-five'].Top) 'Rings must stay vertically ordered.'
   Assert-Ui ($area.Contains($script:Ball.Bounds)) 'Rings must remain inside the working area.'
   if ($edge -eq 'left') { Assert-Ui ($script:Ball.Left -eq $area.Left) 'Left dock must remain flush.' }
   if ($edge -eq 'right') { Assert-Ui ($script:Ball.Right -eq $area.Right) 'Right dock must remain flush.' }
@@ -288,7 +290,7 @@ foreach ($edge in @('left','right','top','bottom')) {
 $script:ProfileConfig.profiles[1].enabled = $false
 Apply-ProfileLayout
 Assert-Ui (-not $script:RingCells['work-five'].Visible) 'Disabled accounts must not leave visible rings.'
-Assert-Ui ($script:Ball.Width -eq (B 144)) 'Single account must use two compact rings.'
+Assert-Ui ($script:Ball.Width -eq (B 60) -and $script:Ball.Height -eq (B 144)) 'Single account must use two narrow vertically stacked rings.'
 $script:ProfileConfig.profiles[1].enabled = $true
 Apply-ProfileLayout
 $script:RefreshError = 'fixture offline'

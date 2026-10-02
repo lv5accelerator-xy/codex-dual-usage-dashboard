@@ -2,7 +2,7 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.9.0**
+Current version: **v0.9.1**
 
 ## Windows EXE client (recommended)
 
@@ -125,7 +125,7 @@ The monitor now starts as a **360 × 64 logical-pixel strip** (220 pixels wide w
 
 ## Edge ring mode
 
-Right-click **贴边圆环（点击查看详情）** to show each enabled account's **5h** and **long-term** remaining quota as separate rings. Drag the group to an edge: left/right edges use a vertical stack; top/bottom edges use a horizontal row. Click a ring to open details, hover for its full account name and freshness information, or right-click to switch back. The mode and position survive restarts. Compact opacity also applies to rings.
+Right-click **贴边圆环（点击查看详情）** to show each enabled account's **5h** and **long-term** remaining quota as separate rings. Rings always form one vertical column, even at the top/bottom edge. The strip is 60 logical pixels wide (down from 76); each ring is 40 pixels across. Drag the group to any edge. Click a ring to open details, hover for its full account name and freshness information, or right-click to switch back. The mode and position survive restarts. Compact opacity also applies to rings.
 
 Missing values display **—**, exhausted quota displays **0%**, and stale values are muted and marked **!**. Ring mode stays compact while hovering. It always docks to the nearest working-area edge, independent of the optional snap setting for the other modes.
 
