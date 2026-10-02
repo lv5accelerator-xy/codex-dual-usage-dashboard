@@ -22,6 +22,7 @@ $sample = [pscustomobject]@{
     }
   )
 }
+$ringSample = $sample | ConvertTo-Json -Depth 10 | ConvertFrom-Json
 $script:LastData = Merge-DisplayData $null $sample
 $script:Popup.Show()
 $script:Ball.Show()
@@ -256,6 +257,54 @@ if ($env:CODEX_USAGE_CLIENT_VERSION) {
   Remove-Item $script:ClientStatusPath -Force
 }
 
+# Exercise the actual ring controls, all four dock orientations and mode switching.
+$script:RefreshError = ''
+$script:LastData = $ringSample
+Render-Data $ringSample
+$itemRings.PerformClick()
+Assert-Ui $script:UiSettings.ringMode 'Menu must enable ring mode.'
+foreach ($edge in @('left','right','top','bottom')) {
+  $script:UiSettings.dockHorizontal = if ($edge -in @('left','right')) { $edge } else { 'none' }
+  $script:UiSettings.dockVertical = if ($edge -in @('top','bottom')) { $edge } else { 'none' }
+  Set-MonitorExpanded $false
+  [System.Windows.Forms.Application]::DoEvents()
+  $area = [System.Windows.Forms.Screen]::FromRectangle($script:Ball.Bounds).WorkingArea
+  Assert-Ui ($area.Contains($script:Ball.Bounds)) 'Rings must remain inside the working area.'
+  if ($edge -eq 'left') { Assert-Ui ($script:Ball.Left -eq $area.Left) 'Left dock must remain flush.' }
+  if ($edge -eq 'right') { Assert-Ui ($script:Ball.Right -eq $area.Right) 'Right dock must remain flush.' }
+  if ($edge -eq 'top') { Assert-Ui ($script:Ball.Top -eq $area.Top) 'Top dock must remain flush.' }
+  if ($edge -eq 'bottom') { Assert-Ui ($script:Ball.Bottom -eq $area.Bottom) 'Bottom dock must remain flush.' }
+  Assert-Ui ($script:RingCells['personal-five'].Value -eq 100) 'Ring must show remaining five-hour quota.'
+  Assert-Ui ($script:RingCells['work-long'].Value -eq 21) 'Ring must show the limiting long-term quota.'
+  foreach ($ring in $script:RingCells.Values) {
+    Assert-Ui ($script:RingPanel.ClientRectangle.Contains($ring.Bounds)) 'Every ring must fit its panel.'
+  }
+  $bitmap = New-Object System.Drawing.Bitmap -ArgumentList $script:Ball.Width,$script:Ball.Height
+  try {
+    $script:Ball.DrawToBitmap($bitmap,(New-Object System.Drawing.Rectangle -ArgumentList 0,0,$bitmap.Width,$bitmap.Height))
+    $bitmap.Save((Join-Path $outputDir ('rings-' + $edge + '.png')),[System.Drawing.Imaging.ImageFormat]::Png)
+  } finally { $bitmap.Dispose() }
+}
+$script:ProfileConfig.profiles[1].enabled = $false
+Apply-ProfileLayout
+Assert-Ui (-not $script:RingCells['work-five'].Visible) 'Disabled accounts must not leave visible rings.'
+Assert-Ui ($script:Ball.Width -eq (B 144)) 'Single account must use two compact rings.'
+$script:ProfileConfig.profiles[1].enabled = $true
+Apply-ProfileLayout
+$script:RefreshError = 'fixture offline'
+Update-BallSummary $ringSample
+Assert-Ui $script:RingCells['personal-five'].Stale 'Retained ring values must be marked stale after errors.'
+$script:RefreshError = ''
+Update-BallSummary $null
+Assert-Ui ($script:RingCells['personal-five'].Value -eq -1) 'Missing quota must not appear as zero.'
+Update-BallSummary $ringSample
+Reset-UiPositions
+Assert-Ui ($script:UiSettings.dockHorizontal -ne 'none' -or $script:UiSettings.dockVertical -ne 'none') 'Reset must keep ring mode docked.'
+$itemRings.PerformClick()
+Assert-Ui (-not $script:UiSettings.ringMode) 'Menu must restore compact mode.'
+Assert-Ui $script:CompactGrid.Visible 'Compact strip must be restored.'
+Write-Output 'Ring mode: four edges, single account, stale/missing data and menu switching passed.'
+
 # Accelerated lifetime regression: 60 warmup + 180 measured refreshes,
 # status/hover callbacks, and a real WinForms message pump. No forced GC in app.
 if (-not $env:CODEX_USAGE_CLIENT_VERSION) {
@@ -291,3 +340,4 @@ if (-not $env:CODEX_USAGE_CLIENT_VERSION) {
   Assert-Ui (($measurements[3].private - $measurements[0].private) -lt 64MB) 'Private memory growth must remain bounded after warmup.'
   Assert-Ui (($measurements[3].handles - $measurements[0].handles) -lt 100) 'Repeated refreshes must not leak process handles.'
 }
+
