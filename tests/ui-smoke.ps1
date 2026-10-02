@@ -298,6 +298,8 @@ $script:RefreshError = ''
 Update-BallSummary $null
 Assert-Ui ($script:RingCells['personal-five'].Value -eq -1) 'Missing quota must not appear as zero.'
 Update-BallSummary $ringSample
+Reset-UiPositions
+Assert-Ui ($script:UiSettings.dockHorizontal -ne 'none' -or $script:UiSettings.dockVertical -ne 'none') 'Reset must keep ring mode docked.'
 $itemRings.PerformClick()
 Assert-Ui (-not $script:UiSettings.ringMode) 'Menu must restore compact mode.'
 Assert-Ui $script:CompactGrid.Visible 'Compact strip must be restored.'

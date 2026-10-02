@@ -852,6 +852,7 @@ try {
     $script:UiSettings.dockHorizontal = 'none'
     $script:UiSettings.dockVertical = 'none'
     Remember-MonitorPosition
+    if ($script:UiSettings.ringMode) { Snap-Monitor }
     $panelLocation = Get-DefaultPanelLocation -Width $script:Popup.Width -Height $script:Popup.Height
     $script:Popup.Location = $panelLocation
     Save-UiSettings
