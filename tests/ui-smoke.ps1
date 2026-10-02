@@ -259,6 +259,7 @@ if ($env:CODEX_USAGE_CLIENT_VERSION) {
 
 # Exercise the actual ring controls, all four dock orientations and mode switching.
 $script:RefreshError = ''
+$script:LastData = $ringSample
 Render-Data $ringSample
 $itemRings.PerformClick()
 Assert-Ui $script:UiSettings.ringMode 'Menu must enable ring mode.'
