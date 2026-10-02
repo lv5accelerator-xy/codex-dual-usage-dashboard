@@ -89,10 +89,10 @@ namespace CodexUsage {
         }
         protected override void OnPaint(PaintEventArgs e) {
             base.OnPaint(e);
-            float scale = Width / 68f;
-            float diameter = 48 * scale;
-            float stroke = 4 * scale;
-            var ring = new RectangleF((Width - diameter) / 2, 5 * scale, diameter, diameter);
+            float scale = Width / 52f;
+            float diameter = 40 * scale;
+            float stroke = 3 * scale;
+            var ring = new RectangleF((Width - diameter) / 2, 4 * scale, diameter, diameter);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using (var track = new Pen(Color.FromArgb(52, 55, 64), stroke))
                 e.Graphics.DrawEllipse(track, ring);
@@ -106,12 +106,12 @@ namespace CodexUsage {
             string valueText = Value < 0 || Double.IsNaN(Value) || Double.IsInfinity(Value)
                 ? "—" : Math.Round(Math.Max(0, Math.Min(100, Value))).ToString() + "%";
             if (Stale) valueText += "!";
-            using (var valueFont = new Font("Segoe UI", 10 * scale, FontStyle.Bold, GraphicsUnit.Point))
+            using (var valueFont = new Font("Segoe UI", 9 * scale, FontStyle.Bold, GraphicsUnit.Point))
             using (var captionFont = new Font("Microsoft YaHei UI", 7 * scale, FontStyle.Regular, GraphicsUnit.Point)) {
                 TextRenderer.DrawText(e.Graphics, valueText, valueFont, Rectangle.Round(ring), ForeColor,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
                 TextRenderer.DrawText(e.Graphics, Caption, captionFont,
-                    new Rectangle(0, (int)(58 * scale), Width, (int)(18 * scale)), ForeColor,
+                    new Rectangle(0, (int)(49 * scale), Width, (int)(16 * scale)), ForeColor,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
             }
         }
