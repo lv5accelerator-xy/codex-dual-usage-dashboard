@@ -2,7 +2,7 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.8.0**
+Current version: **v0.9.0**
 
 ## Windows EXE client (recommended)
 
@@ -123,6 +123,14 @@ The monitor now starts as a **360 × 64 logical-pixel strip** (220 pixels wide w
 - A new reset timestamp starts a new cycle. If no timestamp is available, recovery above all configured thresholds rearms alerts. A gap of ten minutes or more establishes a new comparison baseline without notifying.
 - Compact/expanded preference, snapping, resting position, and notification preferences are saved in `ui-settings.json`. Collapsed values marked **!** are stale or unavailable; hover for details.
 
+## Edge ring mode
+
+Right-click **贴边圆环（点击查看详情）** to show each enabled account's **5h** and **long-term** remaining quota as separate rings. Drag the group to an edge: left/right edges use a vertical stack; top/bottom edges use a horizontal row. Click a ring to open details, hover for its full account name and freshness information, or right-click to switch back. The mode and position survive restarts. Compact opacity also applies to rings.
+
+Missing values display **—**, exhausted quota displays **0%**, and stale values are muted and marked **!**. Ring mode stays compact while hovering. It always docks to the nearest working-area edge, independent of the optional snap setting for the other modes.
+
+v0.9.0 also includes the Windows remote-worker HOME-variable fix from PR #4. Install and restart the new desktop build to apply it; a successful build alone does not verify real iPhone synchronization.
+
 ## Floating monitor
 
 Run `start.bat` to open a compact rounded panel. Aligned columns show the remaining **5-hour** and **long-term** quotas for each account, with a visible update timestamp or stale-data warning.
@@ -226,3 +234,4 @@ Authentication stays in the user's local Codex profile directories. Never commit
 ## GitHub ZIP downloads
 
 Extract **Code → Download ZIP** completely before running `start.bat`. The launcher normalizes PowerShell encoding for Windows PowerShell 5.1 and checks `tray.ps1` syntax before starting the UI. Keep `ui-controls.cs`, `ui-model.ps1`, and `ui-behavior.ps1` next to `tray.ps1`.
+

@@ -75,6 +75,48 @@ namespace CodexUsage {
         }
     }
 
+    public class QuotaRing : Control {
+        public double Value { get; set; }
+        public string Caption { get; set; }
+        public bool Stale { get; set; }
+        public Color FillColor { get; set; }
+        public QuotaRing() {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            Value = -1;
+            Caption = "";
+            FillColor = Color.FromArgb(138, 158, 214);
+        }
+        protected override void OnPaint(PaintEventArgs e) {
+            base.OnPaint(e);
+            float scale = Width / 68f;
+            float diameter = 48 * scale;
+            float stroke = 4 * scale;
+            var ring = new RectangleF((Width - diameter) / 2, 5 * scale, diameter, diameter);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var track = new Pen(Color.FromArgb(52, 55, 64), stroke))
+                e.Graphics.DrawEllipse(track, ring);
+            if (Value > 0 && !Double.IsNaN(Value) && !Double.IsInfinity(Value)) {
+                using (var pen = new Pen(FillColor, stroke)) {
+                    pen.StartCap = LineCap.Round;
+                    pen.EndCap = LineCap.Round;
+                    e.Graphics.DrawArc(pen, ring, -90, (float)(Math.Min(100, Value) * 3.6));
+                }
+            }
+            string valueText = Value < 0 || Double.IsNaN(Value) || Double.IsInfinity(Value)
+                ? "—" : Math.Round(Math.Max(0, Math.Min(100, Value))).ToString() + "%";
+            if (Stale) valueText += "!";
+            using (var valueFont = new Font("Segoe UI", 10 * scale, FontStyle.Bold, GraphicsUnit.Point))
+            using (var captionFont = new Font("Microsoft YaHei UI", 7 * scale, FontStyle.Regular, GraphicsUnit.Point)) {
+                TextRenderer.DrawText(e.Graphics, valueText, valueFont, Rectangle.Round(ring), ForeColor,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                TextRenderer.DrawText(e.Graphics, Caption, captionFont,
+                    new Rectangle(0, (int)(58 * scale), Width, (int)(18 * scale)), ForeColor,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+            }
+        }
+    }
+
     public class QuotaBar : Control {
         public double Value { get; set; }
         public Color FillColor { get; set; }
@@ -217,3 +259,4 @@ namespace CodexUsage {
         }
     }
 }
+

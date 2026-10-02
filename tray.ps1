@@ -47,6 +47,7 @@ $script:AlertStatePath = Join-Path $script:LogDir 'notification-state.json'
 $script:MonitorExpanded = $true
 $script:RestLocation = $null
 $script:PointerLeftAt = $null
+$script:RingCells = @{}
 $script:CompactCells = @{}
 $script:CompactRecovery = @{}
 
@@ -211,6 +212,7 @@ try {
       ballVisible = $true
       setupSeen = $false
       hideFullscreen = $false
+      ringMode = $false
       compactMode = $true
       compactOpacity = 80
       edgeSnap = $true
@@ -227,7 +229,7 @@ try {
     if (Test-Path -LiteralPath $script:UiSettingsPath) {
       try {
         $loaded = Get-Content -LiteralPath $script:UiSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        foreach ($key in @('ballX','ballY','panelX','panelY','panelWidth','panelHeight','topMost','ballVisible','compactMode','compactOpacity','edgeSnap','dockHorizontal','dockVertical','notificationsEnabled','notificationThresholds','setupSeen','hideFullscreen')) {
+        foreach ($key in @('ballX','ballY','panelX','panelY','panelWidth','panelHeight','topMost','ballVisible','ringMode','compactMode','compactOpacity','edgeSnap','dockHorizontal','dockVertical','notificationsEnabled','notificationThresholds','setupSeen','hideFullscreen')) {
           if ($loaded.PSObject.Properties.Name -contains $key) {
             $settings[$key] = $loaded.$key
           }
@@ -311,8 +313,49 @@ try {
     $script:Ball.Opacity = if ($script:MonitorExpanded) { 1.0 } else { [double]$script:UiSettings.compactOpacity / 100.0 }
   }
 
+  function Set-RingLayout {
+    $active = @(Get-ActiveIds)
+    $vertical = $script:UiSettings.dockHorizontal -in @('left','right')
+    $count = [Math]::Max(1,$active.Count * 2)
+    $width = if ($vertical) { 76 } else { 8 + 68 * $count }
+    $height = if ($vertical) { 8 + 80 * $count } else { 88 }
+    $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList 4
+    $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (B $width),(B $height)
+    $index = 0
+    foreach ($id in @('personal','work')) {
+      foreach ($window in @('five','long')) {
+        $ring = $script:RingCells[($id + '-' + $window)]
+        $ring.Visible = $id -in $active
+        if ($id -notin $active) { continue }
+        $x = if ($vertical) { 0 } else { 68 * $index }
+        $y = if ($vertical) { 80 * $index } else { 0 }
+        $ring.SetBounds((B $x),(B $y),(B 68),(B 80))
+        $index++
+      }
+    }
+    $area = [System.Windows.Forms.Screen]::FromPoint($script:RestLocation).WorkingArea
+    $x = $script:RestLocation.X
+    $y = $script:RestLocation.Y
+    if ($script:UiSettings.dockHorizontal -eq 'left') { $x = $area.Left }
+    if ($script:UiSettings.dockHorizontal -eq 'right') { $x = $area.Right - $script:Ball.Width }
+    if ($script:UiSettings.dockVertical -eq 'top') { $y = $area.Top }
+    if ($script:UiSettings.dockVertical -eq 'bottom') { $y = $area.Bottom - $script:Ball.Height }
+    $script:Ball.Location = Clamp-Location -X $x -Y $y -Width $script:Ball.Width -Height $script:Ball.Height
+    Remember-MonitorPosition
+  }
+
   function Set-MonitorExpanded {
     param([bool]$Expanded)
+    if ($script:UiSettings.ringMode) {
+      $script:MonitorExpanded = $false
+      $script:ExpandedGrid.Visible = $false
+      $script:CompactGrid.Visible = $false
+      $script:RingPanel.Visible = $true
+      Update-MonitorOpacity
+      Set-RingLayout
+      return
+    }
+    $script:RingPanel.Visible = $false
     if (-not $script:UiSettings.compactMode) { $Expanded = $true }
     if ($null -eq $script:RestLocation) { Remember-MonitorPosition }
     $script:Ball.SuspendLayout()
@@ -335,6 +378,20 @@ try {
 
   function Snap-Monitor {
     $area = [System.Windows.Forms.Screen]::FromRectangle($script:Ball.Bounds).WorkingArea
+    if ($script:UiSettings.ringMode) {
+      $edges = @(
+        @{ edge='left'; distance=[Math]::Abs($script:Ball.Left - $area.Left) },
+        @{ edge='right'; distance=[Math]::Abs($area.Right - $script:Ball.Right) },
+        @{ edge='top'; distance=[Math]::Abs($script:Ball.Top - $area.Top) },
+        @{ edge='bottom'; distance=[Math]::Abs($area.Bottom - $script:Ball.Bottom) }
+      )
+      $edge = ($edges | Sort-Object distance | Select-Object -First 1).edge
+      $script:UiSettings.dockHorizontal = if ($edge -in @('left','right')) { $edge } else { 'none' }
+      $script:UiSettings.dockVertical = if ($edge -in @('top','bottom')) { $edge } else { 'none' }
+      Remember-MonitorPosition
+      Set-MonitorExpanded $false
+      return
+    }
     $position = Get-SnappedPosition -X $script:Ball.Left -Y $script:Ball.Top -Width $script:Ball.Width -Height $script:Ball.Height -Area $area -Distance (U 20) -Enabled ([bool]$script:UiSettings.edgeSnap)
     $script:Ball.Location = New-Object System.Drawing.Point -ArgumentList $position.x,$position.y
     $script:UiSettings.dockHorizontal = $position.horizontal
@@ -343,7 +400,7 @@ try {
   }
 
   function Update-MonitorHover {
-    if (-not $script:UiSettings.compactMode -or -not $script:Ball.Visible -or $null -ne $script:BallMouseDown -or $script:MonitorMenu.Visible) { return }
+    if ($script:UiSettings.ringMode -or -not $script:UiSettings.compactMode -or -not $script:Ball.Visible -or $null -ne $script:BallMouseDown -or $script:MonitorMenu.Visible) { return }
     $bounds = $script:Ball.Bounds
     $inside = $bounds.Contains([System.Windows.Forms.Cursor]::Position)
     if ($inside) {
@@ -556,6 +613,19 @@ try {
       $script:ToolTip.SetToolTip($cells.long,$tip)
       $script:ToolTip.SetToolTip($cells.five,'5 小时窗口剩余额度。' + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt)))
       $script:ToolTip.SetToolTip($cells.name,([string]$profile.refreshError))
+      foreach ($window in @('five','long')) {
+        $ring = $script:RingCells[($id + '-' + $window)]
+        if ($null -eq $ring) { continue }
+        $value = if ($window -eq 'five') { $pair.fiveHour } else { $pair.longTerm }
+        $ring.Value = if ($null -eq $value) { -1 } else { [double]$value }
+        $ring.Stale = $stale
+        $ring.Caption = (Get-AccountName $id) + $(if ($window -eq 'five') { ' · 5h' } else { ' · 长周期' })
+        $ring.ForeColor = Get-ValueColor $value $stale
+        $ring.FillColor = $ring.ForeColor
+        $ring.AccessibleName = $ring.Caption + ' 剩余 ' + (Format-Percent $value) + $(if ($stale) { ' 数据未更新' } else { '' })
+        $script:ToolTip.SetToolTip($ring,($ring.AccessibleName + "`r`n" + $tip + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt))))
+        $ring.Invalidate()
+      }
       if ($script:CompactCells.ContainsKey($id)) {
         $values = @(@($pair.fiveHour,$pair.longTerm) | Where-Object { $null -ne $_ })
         $minimum = if ($values.Count) { ($values | Measure-Object -Minimum).Minimum } else { $null }
@@ -993,6 +1063,20 @@ try {
   $script:CompactGrid.Visible = $false
   $script:Ball.Controls.Add($script:CompactGrid)
 
+  $script:RingPanel = New-Object System.Windows.Forms.Panel
+  $script:RingPanel.Dock = 'Fill'
+  $script:RingPanel.Visible = $false
+  foreach ($id in @('personal','work')) {
+    foreach ($window in @('five','long')) {
+      $ring = New-Object CodexUsage.QuotaRing
+      $ring.BackColor = $script:Theme.BallBack
+      $ring.ForeColor = $script:Theme.TextMuted
+      $script:RingCells[($id + '-' + $window)] = $ring
+      $script:RingPanel.Controls.Add($ring)
+    }
+  }
+  $script:Ball.Controls.Add($script:RingPanel)
+
   function Get-ControlTree {
     param($Control)
     $Control
@@ -1049,10 +1133,25 @@ try {
   $itemCompact.CheckOnClick = $true
   $itemCompact.Checked = [bool]$script:UiSettings.compactMode
   $itemCompact.Add_Click({
+    $script:UiSettings.ringMode = $false
+    $itemRings.Checked = $false
     $script:UiSettings.compactMode = $itemCompact.Checked
     Remember-MonitorPosition
     Set-MonitorExpanded (-not $itemCompact.Checked)
     Remember-MonitorPosition
+    Save-UiSettings
+  })
+  $itemRings = $menu.Items.Add('贴边圆环（点击查看详情）')
+  $itemRings.CheckOnClick = $true
+  $itemRings.Checked = [bool]$script:UiSettings.ringMode
+  if ($itemRings.Checked) { $itemCompact.Checked = $false }
+  $itemRings.Add_Click({
+    Remember-MonitorPosition
+    $script:UiSettings.ringMode = $itemRings.Checked
+    $script:UiSettings.compactMode = $true
+    $itemCompact.Checked = -not $itemRings.Checked
+    Set-MonitorExpanded $false
+    if ($itemRings.Checked) { Snap-Monitor }
     Save-UiSettings
   })
   $opacityMenu = New-Object System.Windows.Forms.ToolStripMenuItem
@@ -1220,9 +1319,10 @@ try {
   Start-RemoteWorker
 
   Apply-ProfileLayout
-  $script:Ball.Add_ScaleChanged({ $script:Ball.Radius = B 16; Remember-MonitorPosition })
+  $script:Ball.Add_ScaleChanged({ $script:Ball.Radius = B 16; Remember-MonitorPosition; if ($script:UiSettings.ringMode) { Set-MonitorExpanded $false } })
   $script:Popup.Add_ScaleChanged({ Update-CardWidths })
   Set-MonitorExpanded (-not [bool]$script:UiSettings.compactMode)
+  if ($script:UiSettings.ringMode) { Snap-Monitor }
   $script:NotifyIcon.Add_BalloonTipClicked({ $script:Popup.Show(); $script:Popup.Activate() })
 
   if ([bool]$script:UiSettings.ballVisible -and -not $SmokeTest) { $script:Ball.Show() }
@@ -1285,3 +1385,4 @@ try {
   Show-FatalError ($_.Exception.ToString() + "`r`n" + $_.ScriptStackTrace)
   exit 1
 }
+
