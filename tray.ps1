@@ -319,7 +319,7 @@ try {
     $count = [Math]::Max(1,$active.Count * 2)
     $width = if ($vertical) { 76 } else { 8 + 68 * $count }
     $height = if ($vertical) { 8 + 80 * $count } else { 88 }
-    $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList 4
+    $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (B 4)
     $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (B $width),(B $height)
     $index = 0
     foreach ($id in @('personal','work')) {

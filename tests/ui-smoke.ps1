@@ -22,6 +22,7 @@ $sample = [pscustomobject]@{
     }
   )
 }
+$ringSample = $sample | ConvertTo-Json -Depth 10 | ConvertFrom-Json
 $script:LastData = Merge-DisplayData $null $sample
 $script:Popup.Show()
 $script:Ball.Show()
@@ -258,7 +259,7 @@ if ($env:CODEX_USAGE_CLIENT_VERSION) {
 
 # Exercise the actual ring controls, all four dock orientations and mode switching.
 $script:RefreshError = ''
-Render-Data $sample
+Render-Data $ringSample
 $itemRings.PerformClick()
 Assert-Ui $script:UiSettings.ringMode 'Menu must enable ring mode.'
 foreach ($edge in @('left','right','top','bottom')) {
@@ -290,12 +291,12 @@ Assert-Ui ($script:Ball.Width -eq (B 144)) 'Single account must use two compact 
 $script:ProfileConfig.profiles[1].enabled = $true
 Apply-ProfileLayout
 $script:RefreshError = 'fixture offline'
-Update-BallSummary $sample
+Update-BallSummary $ringSample
 Assert-Ui $script:RingCells['personal-five'].Stale 'Retained ring values must be marked stale after errors.'
 $script:RefreshError = ''
 Update-BallSummary $null
 Assert-Ui ($script:RingCells['personal-five'].Value -eq -1) 'Missing quota must not appear as zero.'
-Update-BallSummary $sample
+Update-BallSummary $ringSample
 $itemRings.PerformClick()
 Assert-Ui (-not $script:UiSettings.ringMode) 'Menu must restore compact mode.'
 Assert-Ui $script:CompactGrid.Visible 'Compact strip must be restored.'

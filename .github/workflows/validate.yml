@@ -102,7 +102,7 @@ jobs:
           cat > release-notes.md <<'NOTES'
           Windows 10/11 desktop client. Download **CodexUsage.exe** and double-click it. Confirm “安装并启动” on first launch. Installation is per-user and creates shortcuts; no administrator access is needed. Windows Settings → Apps now includes an uninstall entry that preserves settings and account data.
 
-          v0.8.0 新增安全的 iPhone / Mobile PWA。Windows 端只发送严格脱敏的额度快照，通过独立 ntfy topic 本地加密；手机使用 Web Crypto 验证并解密，不接触 Codex 登录凭证。手机同步可以独立启用，并包含重复抑制、五分钟心跳和网络退避；保留跨电脑完成通知。
+          v0.9.0 新增贴边圆环显示模式：各账号 5h / 长周期额度独立显示，左右竖排、上下横排，点击查看详情。本版同时包含 PR #4 的 Windows 后台同步修复；更新并重启 Windows 客户端后，请实际刷新电脑和手机确认同步。\n\n          保留安全的 iPhone / Mobile PWA。Windows 端只发送严格脱敏的额度快照，通过独立 ntfy topic 本地加密；手机使用 Web Crypto 验证并解密，不接触 Codex 登录凭证。手机同步可以独立启用，并包含重复抑制、五分钟心跳和网络退避；保留跨电脑完成通知。
 
           后续版本在后台自动检查和下载，右键选择“客户端更新 → 重启并更新”生效，也可退出后自动安装。额度每分钟刷新一次；保留紧凑模式、透明度设置、贴边吸附与低额度通知。
 
@@ -119,3 +119,4 @@ jobs:
           fi
           gh release upload "$tag" dist/CodexUsage.exe dist/update.json dist/SHA256SUMS.txt dist/READ-ME.txt --repo "$GITHUB_REPOSITORY" --clobber
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+
