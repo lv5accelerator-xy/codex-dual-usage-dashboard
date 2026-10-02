@@ -10,6 +10,12 @@ New-Item -ItemType Directory -Force -Path $temp | Out-Null
 try {
   . (Join-Path $root 'remote-worker.ps1') -DataRoot $temp -LibraryOnly
 
+  $profileHome = Join-Path $temp 'profile-codex-home'
+  $profiles = [ordered]@{ profiles = @([ordered]@{ id = 'personal'; codexHome = $profileHome; enabled = $true }) }
+  [System.IO.File]::WriteAllText((Join-Path $temp 'profiles.json'),($profiles | ConvertTo-Json -Depth 4),(New-Object System.Text.UTF8Encoding($false)))
+  $codexHomes = @(Get-RemoteCodexHomes)
+  Assert-Remote ($codexHomes -contains $profileHome) 'Configured Codex homes must load without assigning PowerShell automatic variables.'
+
   $key = 'pair-key-test-123456789'
   $plain = '{"hello":"remote Codex","value":42}'
   $cipher = Protect-RemoteMessage -PlainText $plain -PairKey $key

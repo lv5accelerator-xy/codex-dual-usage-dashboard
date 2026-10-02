@@ -65,8 +65,8 @@ function Get-RemoteCodexHomes {
       $profiles = Get-Content -LiteralPath $profilesPath -Raw -Encoding UTF8 | ConvertFrom-Json
       foreach ($profile in @($profiles.profiles)) {
         if ($null -ne $profile.PSObject.Properties['enabled'] -and -not [bool]$profile.enabled) { continue }
-        $home = Resolve-RemoteCodexHome ([string]$profile.codexHome)
-        if (-not [string]::IsNullOrWhiteSpace($home)) { [void]$homes.Add($home) }
+        $codexHomePath = Resolve-RemoteCodexHome ([string]$profile.codexHome)
+        if (-not [string]::IsNullOrWhiteSpace($codexHomePath)) { [void]$homes.Add($codexHomePath) }
       }
     } catch { Write-RemoteWorkerLog ('profiles.json warning: ' + $_.Exception.Message) }
   }
@@ -288,8 +288,8 @@ $mobileFailureCount = 0
 
 try {
   if ([bool]$settings.enabled) {
-    foreach ($home in @(Get-RemoteCodexHomes)) {
-      $sessions = Join-Path $home 'sessions'
+    foreach ($codexHomePath in @(Get-RemoteCodexHomes)) {
+      $sessions = Join-Path $codexHomePath 'sessions'
       $watch = New-RemoteWatcher -SessionsPath $sessions -Id ([Guid]::NewGuid().ToString('N'))
       if ($null -ne $watch) { $watchers += $watch; Write-RemoteWorkerLog ('Watching ' + $sessions) }
     }
@@ -324,8 +324,8 @@ try {
     $now = [DateTimeOffset]::UtcNow
     if ([bool]$settings.enabled -and ($now - $lastFallback).TotalSeconds -ge 12) {
       $lastFallback = $now
-      foreach ($home in @(Get-RemoteCodexHomes)) {
-        $sessions = Join-Path $home 'sessions'
+      foreach ($codexHomePath in @(Get-RemoteCodexHomes)) {
+        $sessions = Join-Path $codexHomePath 'sessions'
         if (-not (Test-Path -LiteralPath $sessions)) { continue }
         try {
           foreach ($file in @(Get-ChildItem -LiteralPath $sessions -Filter '*.jsonl' -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTimeUtc -ge $startedAt.UtcDateTime.AddSeconds(-5) })) {
