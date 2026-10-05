@@ -375,21 +375,7 @@ try {
 
   function Snap-Monitor {
     $area = [System.Windows.Forms.Screen]::FromRectangle($script:Ball.Bounds).WorkingArea
-    if ($script:UiSettings.ringMode) {
-      $edges = @(
-        @{ edge='left'; distance=[Math]::Abs($script:Ball.Left - $area.Left) },
-        @{ edge='right'; distance=[Math]::Abs($area.Right - $script:Ball.Right) },
-        @{ edge='top'; distance=[Math]::Abs($script:Ball.Top - $area.Top) },
-        @{ edge='bottom'; distance=[Math]::Abs($area.Bottom - $script:Ball.Bottom) }
-      )
-      $edge = ($edges | Sort-Object distance | Select-Object -First 1).edge
-      $script:UiSettings.dockHorizontal = if ($edge -in @('left','right')) { $edge } else { 'none' }
-      $script:UiSettings.dockVertical = if ($edge -in @('top','bottom')) { $edge } else { 'none' }
-      Remember-MonitorPosition
-      Set-MonitorExpanded $false
-      return
-    }
-    $position = Get-SnappedPosition -X $script:Ball.Left -Y $script:Ball.Top -Width $script:Ball.Width -Height $script:Ball.Height -Area $area -Distance (U 20) -Enabled ([bool]$script:UiSettings.edgeSnap)
+    $position = Get-SnappedPosition -X $script:Ball.Left -Y $script:Ball.Top -Width $script:Ball.Width -Height $script:Ball.Height -Area $area -Distance (B 20) -Enabled ([bool]$script:UiSettings.edgeSnap)
     $script:Ball.Location = New-Object System.Drawing.Point -ArgumentList $position.x,$position.y
     $script:UiSettings.dockHorizontal = $position.horizontal
     $script:UiSettings.dockVertical = $position.vertical
@@ -849,7 +835,7 @@ try {
     $script:UiSettings.dockHorizontal = 'none'
     $script:UiSettings.dockVertical = 'none'
     Remember-MonitorPosition
-    if ($script:UiSettings.ringMode) { Snap-Monitor }
+    if ($script:UiSettings.ringMode) { Set-MonitorExpanded $false }
     $panelLocation = Get-DefaultPanelLocation -Width $script:Popup.Width -Height $script:Popup.Height
     $script:Popup.Location = $panelLocation
     Save-UiSettings

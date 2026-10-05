@@ -287,6 +287,33 @@ foreach ($edge in @('left','right','top','bottom')) {
     $bitmap.Save((Join-Path $outputDir ('rings-' + $edge + '.png')),[System.Drawing.Imaging.ImageFormat]::Png)
   } finally { $bitmap.Dispose() }
 }
+# Exercise release-time snap rules on the real ring window, not saved dock flags.
+$area = [System.Windows.Forms.Screen]::FromRectangle($script:Ball.Bounds).WorkingArea
+$centerX = $area.Left + [int](($area.Width - $script:Ball.Width) / 2)
+$centerY = $area.Top + [int](($area.Height - $script:Ball.Height) / 2)
+$script:UiSettings.edgeSnap = $true
+foreach ($edge in @('left','right','top','bottom')) {
+  $x = $centerX
+  $y = $centerY
+  if ($edge -eq 'left') { $x = $area.Left + (B 10) }
+  if ($edge -eq 'right') { $x = $area.Right - $script:Ball.Width - (B 10) }
+  if ($edge -eq 'top') { $y = $area.Top + (B 10) }
+  if ($edge -eq 'bottom') { $y = $area.Bottom - $script:Ball.Height - (B 10) }
+  $script:Ball.Location = New-Object System.Drawing.Point -ArgumentList $x,$y
+  Snap-Monitor
+  Assert-Ui ($script:UiSettings.dockHorizontal -eq $edge -or $script:UiSettings.dockVertical -eq $edge) 'Dragging near each edge must snap to that edge.'
+}
+$script:Ball.Location = New-Object System.Drawing.Point -ArgumentList $centerX,$centerY
+Snap-Monitor
+Assert-Ui ($script:Ball.Left -eq $centerX -and $script:Ball.Top -eq $centerY) 'Dragging away must leave rings at the selected position.'
+Assert-Ui ($script:UiSettings.dockHorizontal -eq 'none' -and $script:UiSettings.dockVertical -eq 'none') 'Free placement must clear old dock flags.'
+Set-MonitorExpanded $false
+Assert-Ui ($script:Ball.Left -eq $centerX -and $script:Ball.Top -eq $centerY) 'Relayout must retain the free position.'
+$script:UiSettings.edgeSnap = $false
+$script:Ball.Location = New-Object System.Drawing.Point -ArgumentList ($area.Left + (B 10)),$centerY
+Snap-Monitor
+Assert-Ui ($script:Ball.Left -eq $area.Left + (B 10)) 'Disabling snap must permit placement close to an edge.'
+$script:UiSettings.edgeSnap = $true
 $script:ProfileConfig.profiles[1].enabled = $false
 Apply-ProfileLayout
 Assert-Ui (-not $script:RingCells['work-five'].Visible) 'Disabled accounts must not leave visible rings.'
@@ -301,7 +328,7 @@ Update-BallSummary $null
 Assert-Ui ($script:RingCells['personal-five'].Value -eq -1) 'Missing quota must not appear as zero.'
 Update-BallSummary $ringSample
 Reset-UiPositions
-Assert-Ui ($script:UiSettings.dockHorizontal -ne 'none' -or $script:UiSettings.dockVertical -ne 'none') 'Reset must keep ring mode docked.'
+Assert-Ui ($script:UiSettings.dockHorizontal -eq 'none' -and $script:UiSettings.dockVertical -eq 'none') 'Reset must allow ring mode to float.'
 $itemRings.PerformClick()
 Assert-Ui (-not $script:UiSettings.ringMode) 'Menu must restore compact mode.'
 Assert-Ui $script:CompactGrid.Visible 'Compact strip must be restored.'
