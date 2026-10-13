@@ -55,7 +55,7 @@ function Get-ExpandedHeight {
 function B {
   param([double]$Value)
   $scale = if ($null -ne $script:Ball) { $script:Ball.DisplayDpi / 96.0 } else { $script:UiScale }
-  return [int][Math]::Round($Value * $scale * (Get-MonitorSizeScale ([string]$script:UiSettings.monitorSize)))
+  return [int][Math]::Round($Value * $scale * $script:MonitorLayoutScale)
 }
 function Get-MonitorSizeScale {
   param([string]$Size)
@@ -65,16 +65,33 @@ function Get-MonitorSizeScale {
 }
 function Set-MonitorSize {
   param([ValidateSet('small','medium','large')][string]$Size,[switch]$Initial)
-  $scale = Get-MonitorSizeScale $Size
   Remember-MonitorPosition
   $script:UiSettings.monitorSize = $Size
-  $script:Ball.ApplyZoom([single]($scale / $script:AppliedMonitorScale))
-  $script:AppliedMonitorScale = $scale
-  $script:Ball.Radius = B 16
   Set-MonitorExpanded $script:MonitorExpanded
   foreach ($id in @('small','medium','large')) { $script:MonitorSizeItems[$id].Checked = $id -eq $Size }
   Remember-MonitorPosition
   if (-not $Initial) { Save-UiSettings }
+}
+function Get-MonitorFitScale {
+  param([double]$Width,[double]$Height)
+  $point = $script:RestLocation
+  if ($null -eq $point) {
+    $point = if ($null -ne $script:UiSettings.ballX -and $null -ne $script:UiSettings.ballY) {
+      New-Object System.Drawing.Point -ArgumentList ([int]$script:UiSettings.ballX),([int]$script:UiSettings.ballY)
+    } else { [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Location }
+  }
+  $area = [System.Windows.Forms.Screen]::FromPoint($point).WorkingArea
+  return Get-FittedMonitorScale -Scale (Get-MonitorSizeScale ([string]$script:UiSettings.monitorSize)) -DpiScale ($script:Ball.DisplayDpi / 96.0) -Width $Width -Height $Height -Area $area
+}
+function Update-MonitorLayoutScale {
+  param([double]$Width,[double]$Height)
+  $scale = Get-MonitorFitScale -Width $Width -Height $Height
+  $script:MonitorLayoutScale = $scale
+  if ([Math]::Abs($scale - $script:AppliedMonitorScale) -gt 0.000001) {
+    $script:Ball.ApplyZoom([single]($scale / $script:AppliedMonitorScale))
+    $script:AppliedMonitorScale = $scale
+  }
+  $script:Ball.Radius = B 16
 }
 function Apply-ProfileLayout {
   $active = @(Get-ActiveIds)

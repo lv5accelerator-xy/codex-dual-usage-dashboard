@@ -63,7 +63,8 @@ namespace CodexUsage {
     }
 
     public class FloatingForm : DpiForm {
-        public int Radius { get; set; }
+        int radius = 16;
+        public int Radius { get { return radius; } set { radius = Math.Max(1, value); UpdateRegion(); Invalidate(); } }
         public FloatingForm() { DoubleBuffered = true; Radius = 16; }
         protected override void CreateHandle() {
             // Windows expands a new top-level window to its minimum tracking
@@ -75,6 +76,9 @@ namespace CodexUsage {
         }
         protected override void OnSizeChanged(EventArgs e) {
             base.OnSizeChanged(e);
+            UpdateRegion();
+        }
+        void UpdateRegion() {
             if (Width < 2 || Height < 2) return;
             using (var path = Shapes.Round(new RectangleF(0, 0, Width, Height), Radius)) {
                 var old = Region;
@@ -269,7 +273,7 @@ namespace CodexUsage {
             Invalidate(true);
         }
         public void ApplyZoom(float factor) {
-            if (factor <= 0 || factor > 4) throw new ArgumentOutOfRangeException("factor");
+            if (factor <= 0 || Single.IsNaN(factor) || Single.IsInfinity(factor)) throw new ArgumentOutOfRangeException("factor");
             SuspendLayout();
             try {
                 foreach (Control child in Controls) ScaleTree(child, factor);

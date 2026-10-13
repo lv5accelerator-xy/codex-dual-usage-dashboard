@@ -99,4 +99,14 @@ $fresh = Sample 5
 $fresh.profiles[0] | Add-Member -NotePropertyName individualLimit -NotePropertyValue ([pscustomobject]@{ limit = 0; remainingPercent = 0 })
 [void]@(Alerts $fresh $state)
 Assert-Equal $state.ContainsKey('personal|fixture|individualLimit') $false 'Meaningless monthly limits are excluded'
+$roomy = [pscustomobject]@{Width=1920;Height=1040}
+Assert-Equal (Get-FittedMonitorScale -Scale 1.4 -DpiScale 2 -Width 60 -Height 328 -Area $roomy) 1.4 'Roomy display preserves the preferred size'
+$smallDisplay = [pscustomobject]@{Width=1024;Height=720}
+$fit = Get-FittedMonitorScale -Scale 1.4 -DpiScale 2 -Width 60 -Height 328 -Area $smallDisplay
+Assert-Equal ($fit -lt 1.4) $true 'Large rings fit a small high-DPI display'
+Assert-Equal ([Math]::Round(328 * 2 * $fit) -le 720) $true 'Fitted ring height stays inside the working area'
+$narrowDisplay = [pscustomobject]@{Width=768;Height=800}
+$fit = Get-FittedMonitorScale -Scale 1.4 -DpiScale 2 -Width 360 -Height 64 -Area $narrowDisplay
+Assert-Equal ([Math]::Round(360 * 2 * $fit) -le 768) $true 'Compact width also fits a narrow display'
+Assert-Equal (Get-FittedMonitorScale -Scale 1.4 -DpiScale 2 -Width 60 -Height 328 -Area $null) 1.4 'Transient missing screen information preserves the preference'
 Write-Output "UI behavior: $script:Checks checks passed."

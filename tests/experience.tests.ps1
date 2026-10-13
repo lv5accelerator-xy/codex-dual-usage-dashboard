@@ -49,7 +49,9 @@ try {
       $bounds = New-Object System.Drawing.Rectangle -ArgumentList 200,40,([int][Math]::Round(60*$scale)),([int][Math]::Round(328*$scale))
       $script:Ball.ApplyDpi($dpi,$bounds)
       [System.Windows.Forms.Application]::DoEvents()
-      Assert-Ui ($script:Ball.Width -eq (B 60) -and $script:Ball.Height -eq (B 328)) 'Size and DPI compose into one consistent ring geometry.'
+      Assert-Ui ($script:Ball.Width -eq (B 60) -and $script:Ball.Height -eq (B 328)) ('Size and DPI compose into fitted geometry: ' + $size + '/' + $dpi + ', actual=' + $script:Ball.ClientSize + ', expected=' + (B 60) + 'x' + (B 328))
+      $currentArea = [System.Windows.Forms.Screen]::FromRectangle($script:Ball.Bounds).WorkingArea
+      Assert-Ui ($currentArea.Contains($script:Ball.Bounds) -and $script:UiSettings.monitorSize -eq $size) 'Automatic fitting keeps the whole window visible without changing the saved preference.'
       foreach ($ring in $script:RingCells.Values) { Assert-Ui ($script:RingPanel.ClientRectangle.Contains($ring.Bounds)) 'All rings fit after a size/DPI transition.' }
       $bitmap = New-Object System.Drawing.Bitmap -ArgumentList $script:Ball.Width,$script:Ball.Height
       try {

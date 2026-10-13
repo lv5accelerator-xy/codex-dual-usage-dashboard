@@ -51,6 +51,7 @@ $script:RingCells = @{}
 $script:CompactCells = @{}
 $script:CompactRecovery = @{}
 $script:AppliedMonitorScale = 1.0
+$script:MonitorLayoutScale = 1.0
 $script:DesktopRecoveryPending = $false
 $script:ResumeRefreshRequested = $false
 $script:LastProgressRevision = -1
@@ -311,7 +312,9 @@ try {
     $x = $script:Ball.Left
     $y = $script:Ball.Top
     if ($script:UiSettings.compactMode -and $script:MonitorExpanded -and $script:UiSettings.dockVertical -eq 'bottom') {
-      $y = $script:Ball.Bottom - (B 64)
+      $collapsedWidth = if (@(Get-ActiveIds).Count -eq 1) { 220 } else { 360 }
+      $collapsedScale = Get-MonitorFitScale -Width $collapsedWidth -Height 64
+      $y = $script:Ball.Bottom - [int][Math]::Round(64 * $collapsedScale * $script:Ball.DisplayDpi / 96)
     }
     $script:RestLocation = New-Object System.Drawing.Point -ArgumentList $x,$y
   }
@@ -328,6 +331,7 @@ try {
     $count = [Math]::Max(1,$active.Count * 2)
     $width = 60
     $height = 8 + 80 * $count
+    Update-MonitorLayoutScale -Width $width -Height $height
     $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (B 4)
     $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (B $width),(B $height)
     $contentWidth = $script:Ball.ClientSize.Width - $script:Ball.Padding.Horizontal
@@ -374,17 +378,23 @@ try {
     $script:Ball.SuspendLayout()
     try {
       $script:MonitorExpanded = $Expanded
+      $width = if (@(Get-ActiveIds).Count -eq 1) { 220 } else { 360 }
+      $height = if ($Expanded) { Get-ExpandedHeight } else { 64 }
+      Update-MonitorLayoutScale -Width $width -Height $height
       Update-MonitorOpacity
       $script:ExpandedGrid.Visible = $Expanded
       $script:CompactGrid.Visible = -not $Expanded
-      $height = if ($Expanded) { Get-ExpandedHeight } else { 64 }
       $script:Ball.Padding = if ($Expanded) {
         New-Object System.Windows.Forms.Padding -ArgumentList (B 14),(B 10),(B 14),(B 10)
       } else { New-Object System.Windows.Forms.Padding -ArgumentList (B 12),(B 4),(B 12),(B 4) }
       $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (B $(if (@(Get-ActiveIds).Count -eq 1) { 220 } else { 360 })),(B $height)
       $x = $script:RestLocation.X
       $y = $script:RestLocation.Y
-      if ($Expanded -and $script:UiSettings.compactMode -and $script:UiSettings.dockVertical -eq 'bottom') { $y -= B ((Get-ExpandedHeight) - 64) }
+      $area = [System.Windows.Forms.Screen]::FromPoint($script:RestLocation).WorkingArea
+      if ($script:UiSettings.dockHorizontal -eq 'left') { $x = $area.Left }
+      if ($script:UiSettings.dockHorizontal -eq 'right') { $x = $area.Right - $script:Ball.Width }
+      if ($script:UiSettings.dockVertical -eq 'top') { $y = $area.Top }
+      if ($script:UiSettings.dockVertical -eq 'bottom') { $y = $area.Bottom - $script:Ball.Height }
       $script:Ball.Location = Clamp-Location -X $x -Y $y -Width $script:Ball.Width -Height $script:Ball.Height
     } finally { $script:Ball.ResumeLayout($true) }
   }
@@ -1028,6 +1038,9 @@ try {
   $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (U 320),(U 142)
   $script:Ball.BackColor = $script:Theme.BallBack
   $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 14),(U 10),(U 14),(U 10)
+  $initialWidth = if ($script:UiSettings.ringMode) { 60 } elseif (@(Get-ActiveIds).Count -eq 1) { 220 } else { 360 }
+  $initialHeight = if ($script:UiSettings.ringMode) { 8 + 80 * [Math]::Max(1,@(Get-ActiveIds).Count * 2) } elseif ($script:UiSettings.compactMode) { 64 } else { Get-ExpandedHeight }
+  $script:MonitorLayoutScale = Get-MonitorFitScale -Width $initialWidth -Height $initialHeight
   if ($null -ne $script:UiSettings.ballX -and $null -ne $script:UiSettings.ballY) {
     $savedWidth = if ($script:UiSettings.ringMode) { B 60 } elseif (@(Get-ActiveIds).Count -eq 1) { B 220 } else { B 360 }
     $savedHeight = if ($script:UiSettings.ringMode) { B (8 + 80 * [Math]::Max(1,@(Get-ActiveIds).Count * 2)) } elseif ($script:UiSettings.compactMode) { B 64 } else { B (Get-ExpandedHeight) }

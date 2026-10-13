@@ -4,6 +4,7 @@
 
 - Preserve positive quota below 1% as `<1%` in desktop and mobile views, including the mobile transport; missing and invalid values stay unknown.
 - Add opaque clear mode and small/medium/large monitor sizes, with persisted preferences and consistent size/DPI rounding.
+- Fit oversized monitors to the connected display's working area without changing the saved size preference; keep docked edges anchored when changing size.
 - Run up to two native account readers concurrently and publish each result independently; retain pending-account data and expose per-account update timestamps.
 - Recover visible placement after display changes and resume, refresh after resume, and preserve the actual monitor dimensions when restoring saved ring positions.
 - Add native size/DPI, display-removal, resume, restart, partial-result and bounded-concurrency regression fixtures; physical mixed-DPI display verification remains separate.

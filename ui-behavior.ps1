@@ -1,4 +1,13 @@
 ﻿# Pure interaction/notification rules, shared by the native UI and regression tests.
+function Get-FittedMonitorScale {
+  param([double]$Scale,[double]$DpiScale,[double]$Width,[double]$Height,$Area)
+  if ($null -eq $Area -or $Area.Width -le 0 -or $Area.Height -le 0) { return $Scale }
+  if ($Scale -le 0 -or $DpiScale -le 0 -or $Width -le 0 -or $Height -le 0) { throw 'Invalid monitor geometry.' }
+  $horizontal = [double]$Area.Width / ($Width * $DpiScale)
+  $vertical = [double]$Area.Height / ($Height * $DpiScale)
+  return [Math]::Min($Scale,[Math]::Min($horizontal,$vertical))
+}
+
 function Get-SnappedPosition {
   param([int]$X,[int]$Y,[int]$Width,[int]$Height,$Area,[int]$Distance = 20,[bool]$Enabled = $true)
   $left = [int]$Area.Left
