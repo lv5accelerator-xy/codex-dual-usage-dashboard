@@ -9,6 +9,75 @@ namespace CodexUsageDesktop {
         static int checks;
         static void Check(bool condition, string text) { if (!condition) throw new Exception(text); checks++; }
         static void Reject(Action action, string text) { bool rejected = false; try { action(); } catch { rejected = true; } Check(rejected, text); }
+        static object Normalize(object value) { return new JavaScriptSerializer().DeserializeObject(new JavaScriptSerializer().Serialize(value)); }
+        static void CheckParallelReader(string root) {
+            string config = Path.Combine(root, "parallel-profiles.json");
+            File.WriteAllText(config, "{\"profiles\":[{\"id\":\"personal\",\"label\":\"Personal\"},{\"id\":\"work\",\"label\":\"Work\"},{\"id\":\"disabled\",\"enabled\":false}]}");
+            using (var started = new System.Threading.CountdownEvent(2))
+            using (var releaseSlow = new System.Threading.ManualResetEventSlim(false)) {
+                bool fastPublished = false;
+                int reads = 0, publications = 0;
+                object result = UsageReader.ReadProfilesWithReader(config, profile => {
+                    System.Threading.Interlocked.Increment(ref reads);
+                    started.Signal();
+                    if (!started.Wait(5000)) throw new Exception("Profiles were read serially.");
+                    if (UsageReader.Text(UsageReader.Get(profile, "id")) == "personal" && !releaseSlow.Wait(5000))
+                        throw new TimeoutException("Fast profile did not publish independently.");
+                    return new { id = UsageReader.Text(UsageReader.Get(profile, "id")), ok = true, fetchedAt = DateTimeOffset.UtcNow.ToString("o") };
+                }, (snapshot, pending) => {
+                    publications++;
+                    var profiles = (object[])UsageReader.Get(Normalize(snapshot), "profiles");
+                    if (pending && UsageReader.Get(profiles[1], "ok") is bool && (bool)UsageReader.Get(profiles[1], "ok")) {
+                        fastPublished = (bool)UsageReader.Get(profiles[0], "pending");
+                        releaseSlow.Set();
+                    }
+                });
+                var finalProfiles = (object[])UsageReader.Get(Normalize(result), "profiles");
+                Check(reads == 2, "Disabled profiles do not launch readers");
+                Check(fastPublished, "Fast account is published before a blocked account finishes");
+                Check(publications == 3, "Initial and two completed profile snapshots are published");
+                Check((bool)UsageReader.Get(finalProfiles[0], "ok") && (bool)UsageReader.Get(finalProfiles[1], "ok"), "Independent reads complete successfully");
+                Check(UsageReader.Text(UsageReader.Get(finalProfiles[0], "id")) == "personal" && UsageReader.Text(UsageReader.Get(finalProfiles[1], "id")) == "work", "Parallel completion preserves configuration order");
+            }
+            object failures = UsageReader.ReadProfilesWithReader(config, profile => {
+                if (UsageReader.Text(UsageReader.Get(profile, "id")) == "personal") throw new TimeoutException("Fixture timeout");
+                return new { id = "work", ok = true, fetchedAt = DateTimeOffset.UtcNow.ToString("o") };
+            }, null);
+            var failedProfiles = (object[])UsageReader.Get(Normalize(failures), "profiles");
+            Check(!(bool)UsageReader.Get(failedProfiles[0], "ok") && (bool)UsageReader.Get(failedProfiles[1], "ok"), "One account timeout does not fail another account");
+            File.WriteAllText(config, "{\"profiles\":[{\"id\":\"a\"},{\"id\":\"b\"},{\"id\":\"c\"},{\"id\":\"d\"}]}");
+            int active = 0, maximum = 0, completed = 0;
+            UsageReader.ReadProfilesWithReader(config, profile => {
+                int now = System.Threading.Interlocked.Increment(ref active);
+                int previous;
+                do { previous = maximum; if (previous >= now) break; } while (System.Threading.Interlocked.CompareExchange(ref maximum, now, previous) != previous);
+                try { System.Threading.Thread.Sleep(30); return new { id = UsageReader.Text(UsageReader.Get(profile, "id")), ok = true }; }
+                finally { System.Threading.Interlocked.Decrement(ref active); System.Threading.Interlocked.Increment(ref completed); }
+            }, null);
+            Check(maximum <= 2 && completed == 4, "Account concurrency is bounded to two readers");
+        }
+        static void CheckNativePipeline(string root) {
+            string fixtureRoot = Path.Combine(root, "native-reader-fixture");
+            Directory.CreateDirectory(fixtureRoot);
+            File.WriteAllText(Path.Combine(fixtureRoot, "codex.cmd"), "@echo off\r\n\"%CODEX_USAGE_FIXTURE_EXE%\" --rpc-fixture\r\n", Encoding.ASCII);
+            File.WriteAllText(Path.Combine(fixtureRoot, "profiles.json"), "{\"profiles\":[{\"id\":\"personal\",\"label\":\"Personal\",\"codexHome\":\"~/fixture-personal\"},{\"id\":\"work\",\"label\":\"Work\",\"codexHome\":\"~/fixture-work\"}]}");
+            string[] names = { "PATH", "CODEX_USAGE_DATA_DIR", "CODEX_USAGE_READ_ID", "CODEX_USAGE_FIXTURE_EXE" };
+            var previous = new string[names.Length];
+            for (int i = 0; i < names.Length; i++) previous[i] = Environment.GetEnvironmentVariable(names[i]);
+            try {
+                Environment.SetEnvironmentVariable("PATH", fixtureRoot + Path.PathSeparator + previous[0]);
+                Environment.SetEnvironmentVariable("CODEX_USAGE_DATA_DIR", fixtureRoot);
+                Environment.SetEnvironmentVariable("CODEX_USAGE_READ_ID", "fixture-native-read");
+                Environment.SetEnvironmentVariable("CODEX_USAGE_FIXTURE_EXE", Client.Self);
+                string output = Path.Combine(fixtureRoot, "result.json");
+                Check(UsageReader.Run(output) == 0, "Native reader completes both real fixture RPC processes");
+                object payload = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(output));
+                Check(UsageReader.Text(UsageReader.Get(payload, "readId")) == "fixture-native-read", "Native pipeline preserves request identity");
+                Check(!(bool)UsageReader.Get(payload, "pending") && UsageReader.Number(UsageReader.Get(payload, "revision")) == 3, "Native pipeline atomically publishes the final completion revision");
+                var profiles = (object[])UsageReader.Get(UsageReader.Get(payload, "data"), "profiles");
+                Check(profiles.Length == 2 && (bool)UsageReader.Get(profiles[0], "ok") && (bool)UsageReader.Get(profiles[1], "ok"), "Both accounts survive process launch, RPC and result conversion");
+            } finally { for (int i = 0; i < names.Length; i++) Environment.SetEnvironmentVariable(names[i], previous[i]); }
+        }
         public static int RpcFixture() {
             string line;
             while ((line = Console.ReadLine()) != null) {
@@ -58,6 +127,21 @@ namespace CodexUsageDesktop {
                 var mapFixture = new JavaScriptSerializer().DeserializeObject("{\"rateLimitsByLimitId\":{\"codex\":{\"primary\":{\"windowDurationMins\":300,\"usedPercent\":25}}}}");
                 var mapped = new JavaScriptSerializer().DeserializeObject(new JavaScriptSerializer().Serialize(UsageReader.ConvertResult(fixtureProfile, mapFixture)));
                 Check(UsageReader.Number(UsageReader.Get(UsageReader.Get(mapped, "fiveHour"), "remainingPercent")) == 75, "Native reader accepts mapped snapshots");
+                CheckParallelReader(root);
+                CheckNativePipeline(root);
+                string previousData = Environment.GetEnvironmentVariable("CODEX_USAGE_DATA_DIR");
+                string previousRead = Environment.GetEnvironmentVariable("CODEX_USAGE_READ_ID");
+                try {
+                    Environment.SetEnvironmentVariable("CODEX_USAGE_DATA_DIR", null);
+                    Environment.SetEnvironmentVariable("CODEX_USAGE_READ_ID", "fixture-error-read");
+                    string errorOutput = Path.Combine(root, "reader-error.json");
+                    Check(UsageReader.Run(errorOutput) == 1, "Reader initialization failure returns an error");
+                    object errorPayload = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(errorOutput));
+                    Check(UsageReader.Text(UsageReader.Get(errorPayload, "readId")) == "fixture-error-read", "Reader failures retain the request identity");
+                } finally {
+                    Environment.SetEnvironmentVariable("CODEX_USAGE_DATA_DIR", previousData);
+                    Environment.SetEnvironmentVariable("CODEX_USAGE_READ_ID", previousRead);
+                }
                 Check(UpdateAgent.FailureMessage(new System.Net.WebException()).Contains("网络"), "Network update error is actionable");
                 Check(UpdateAgent.FailureMessage(new InvalidDataException()).Contains("校验"), "Verification failure distinguished from network");
                 Check(UpdateAgent.FailureMessage(new UnauthorizedAccessException()).Contains("权限"), "Write permission failure distinguished");

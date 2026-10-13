@@ -50,6 +50,11 @@ $script:PointerLeftAt = $null
 $script:RingCells = @{}
 $script:CompactCells = @{}
 $script:CompactRecovery = @{}
+$script:AppliedMonitorScale = 1.0
+$script:DesktopRecoveryPending = $false
+$script:ResumeRefreshRequested = $false
+$script:LastProgressRevision = -1
+$script:ReadId = ''
 
 if (-not (Test-Path -LiteralPath $script:LogDir)) {
   New-Item -ItemType Directory -Force -Path $script:LogDir | Out-Null
@@ -215,6 +220,8 @@ try {
       ringMode = $false
       compactMode = $true
       compactOpacity = 80
+      clearMode = $true
+      monitorSize = 'small'
       edgeSnap = $true
       dockHorizontal = 'none'
       dockVertical = 'none'
@@ -229,7 +236,7 @@ try {
     if (Test-Path -LiteralPath $script:UiSettingsPath) {
       try {
         $loaded = Get-Content -LiteralPath $script:UiSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        foreach ($key in @('ballX','ballY','panelX','panelY','panelWidth','panelHeight','topMost','ballVisible','ringMode','compactMode','compactOpacity','edgeSnap','dockHorizontal','dockVertical','notificationsEnabled','notificationThresholds','setupSeen','hideFullscreen')) {
+        foreach ($key in @('ballX','ballY','panelX','panelY','panelWidth','panelHeight','topMost','ballVisible','ringMode','compactMode','compactOpacity','clearMode','monitorSize','edgeSnap','dockHorizontal','dockVertical','notificationsEnabled','notificationThresholds','setupSeen','hideFullscreen')) {
           if ($loaded.PSObject.Properties.Name -contains $key) {
             $settings[$key] = $loaded.$key
           }
@@ -239,6 +246,8 @@ try {
       }
     }
     try { $settings.compactOpacity = [Math]::Max(40,[Math]::Min(100,[int]$settings.compactOpacity)) } catch { $settings.compactOpacity = 80 }
+    if ($settings.clearMode -isnot [bool]) { $settings.clearMode = $true }
+    if ($settings.monitorSize -notin @('small','medium','large')) { $settings.monitorSize = 'small' }
     if ($settings.dockHorizontal -notin @('none','left','right')) { $settings.dockHorizontal = 'none' }
     if ($settings.dockVertical -notin @('none','top','bottom')) { $settings.dockVertical = 'none' }
     $levels = @($settings.notificationThresholds | Where-Object { $_ -match '^\d+$' -and [int]$_ -gt 0 -and [int]$_ -lt 100 } | ForEach-Object { [int]$_ } | Sort-Object -Descending -Unique)
@@ -310,7 +319,8 @@ try {
   function Update-MonitorOpacity {
     # Windows applies opacity to the whole compact window, including text.
     # The expanded monitor always restores full contrast for reading.
-    $script:Ball.Opacity = if ($script:MonitorExpanded) { 1.0 } else { [double]$script:UiSettings.compactOpacity / 100.0 }
+    $script:Ball.Opacity = if ($script:MonitorExpanded -or $script:UiSettings.clearMode) { 1.0 } else { [double]$script:UiSettings.compactOpacity / 100.0 }
+    if ($null -ne $script:OpacitySlider) { $script:OpacitySlider.Enabled = -not $script:UiSettings.clearMode }
   }
 
   function Set-RingLayout {
@@ -320,13 +330,19 @@ try {
     $height = 8 + 80 * $count
     $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (B 4)
     $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (B $width),(B $height)
+    $contentWidth = $script:Ball.ClientSize.Width - $script:Ball.Padding.Horizontal
+    $contentHeight = $script:Ball.ClientSize.Height - $script:Ball.Padding.Vertical
     $index = 0
     foreach ($id in @('personal','work')) {
       foreach ($window in @('five','long')) {
         $ring = $script:RingCells[($id + '-' + $window)]
         $ring.Visible = $id -in $active
         if ($id -notin $active) { continue }
-        $ring.SetBounds(0,(B (80 * $index)),(B 52),(B 80))
+        # Distribute the final physical pixels, including fractional zoom/DPI
+        # rounding, so the last row cannot extend one pixel beyond its panel.
+        $rowTop = [int][Math]::Round($contentHeight * $index / $count)
+        $rowBottom = [int][Math]::Round($contentHeight * ($index + 1) / $count)
+        $ring.SetBounds(0,$rowTop,$contentWidth,($rowBottom - $rowTop))
         $index++
       }
     }
@@ -590,12 +606,14 @@ try {
       $cells.name.ForeColor = if ($stale -and ($null -ne $Data -or -not [string]::IsNullOrEmpty($script:RefreshError))) { $script:Theme.Warning } else { $script:Theme.TextMuted }
       $tip = '长周期显示每周与有效月度额度中，剩余比例较低的一项。'
       $tip += "`r`n当前来源：" + $pair.source
+      $updateText = Get-ProfileUpdateText $profile
+      $tip += "`r`n" + $updateText
       if ($null -ne $profile.weekly) { $tip += "`r`n每周剩余：" + (Format-Percent $profile.weekly.remainingPercent) }
       if (Test-MeaningfulLimit $profile.individualLimit) { $tip += "`r`n工作空间 / 月度剩余：" + (Format-Percent $profile.individualLimit.remainingPercent) }
       if ($stale -and ($null -ne $Data -or -not [string]::IsNullOrEmpty($script:RefreshError))) { $tip += "`r`n数据未更新，请刷新后确认。" }
       $script:ToolTip.SetToolTip($cells.long,$tip)
-      $script:ToolTip.SetToolTip($cells.five,'5 小时窗口剩余额度。' + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt)))
-      $script:ToolTip.SetToolTip($cells.name,([string]$profile.refreshError))
+      $script:ToolTip.SetToolTip($cells.five,'5 小时窗口剩余额度。' + "`r`n" + $updateText + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt)))
+      $script:ToolTip.SetToolTip($cells.name,($updateText + "`r`n" + [string]$profile.refreshError))
       foreach ($window in @('five','long')) {
         $ring = $script:RingCells[($id + '-' + $window)]
         if ($null -eq $ring) { continue }
@@ -668,10 +686,10 @@ try {
     foreach ($entry in $script:CardStates) {
       $stale = (Test-ProfileStale $entry.profile) -or -not [string]::IsNullOrEmpty($script:RefreshError)
       $loading = $null -eq $script:LastData -and [string]::IsNullOrEmpty($script:RefreshError)
-      $entry.label.Text = if ($loading) { '等待读取…' } elseif ($stale) { '数据未更新' } else { '已连接 · 数据已更新' }
+      $entry.label.Text = if ($entry.profile.pending) { '正在读取 · 保留上次数据' } elseif ($loading) { '等待读取…' } elseif ($stale) { '数据未更新' } else { '已连接 · 数据已更新' }
       if ($loading) { $stale = $false }
       $entry.label.ForeColor = if ($stale) { $script:Theme.Warning } else { $script:Theme.TextMuted }
-      $script:ToolTip.SetToolTip($entry.label,([string]$entry.profile.refreshError))
+      $script:ToolTip.SetToolTip($entry.label,((Get-ProfileUpdateText $entry.profile) + "`r`n" + [string]$entry.profile.refreshError))
     }
     foreach ($label in $script:ResetLabels) {
       $window = $label.Tag.window
@@ -733,6 +751,8 @@ try {
     param([switch]$Silent)
     if ($script:RefreshPending) { return }
     $script:ReadRevision = $script:ProfileRevision
+    $script:ReadId = [Guid]::NewGuid().ToString('N')
+    $script:LastProgressRevision = -1
     $script:RefreshPending = $true
     $script:RefreshStarted = [DateTimeOffset]::Now
     $script:RefreshButton.Enabled = $false
@@ -753,6 +773,7 @@ try {
       $psi.WorkingDirectory = $script:Root
       $psi.UseShellExecute = $false
       $psi.CreateNoWindow = $true
+      $psi.EnvironmentVariables['CODEX_USAGE_READ_ID'] = $script:ReadId
       $script:WorkerProcess = New-Object System.Diagnostics.Process
       $script:WorkerProcess.StartInfo = $psi
       if (-not $script:WorkerProcess.Start()) { throw '无法启动后台读取进程。' }
@@ -771,6 +792,7 @@ try {
   function Finish-RefreshIfReady {
     if (-not $script:RefreshPending -or $null -eq $script:WorkerProcess) { return }
     if (-not $script:WorkerProcess.HasExited) {
+      Read-RefreshProgress
       if (([DateTimeOffset]::Now - $script:RefreshStarted).TotalSeconds -lt 150) { return }
       try { $script:WorkerProcess.Kill() } catch {}
       $script:WorkerProcess.Dispose()
@@ -791,6 +813,7 @@ try {
     try {
       if (-not (Test-Path -LiteralPath $script:CachePath)) { throw '后台未返回数据，请重试或查看日志。' }
       $payload = Get-Content -LiteralPath $script:CachePath -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ($payload.readId -ne $script:ReadId) { throw '读取结果已过期，请重试。' }
       if (-not $payload.ok) { throw ([string]$payload.error) }
       if (@($payload.data.profiles).Count -eq 0) { throw '未配置账号，请检查 profiles.json。' }
       if ($script:ReadRevision -ne $script:ProfileRevision) { Start-Refresh; return }
@@ -805,6 +828,22 @@ try {
       Write-TrayLog ('Refresh error: ' + $_.Exception.Message)
       Render-Error $_.Exception.Message
     }
+  }
+
+  function Read-RefreshProgress {
+    if ($script:ReadRevision -ne $script:ProfileRevision -or -not (Test-Path -LiteralPath $script:CachePath)) { return }
+    try {
+      $payload = Get-Content -LiteralPath $script:CachePath -Raw -Encoding UTF8 | ConvertFrom-Json
+      if (-not [string]::IsNullOrEmpty($script:ReadId) -and $payload.readId -ne $script:ReadId) { return }
+      if (-not $payload.ok -or $null -eq $payload.revision -or [int]$payload.revision -le $script:LastProgressRevision) { return }
+      if (@($payload.data.profiles).Count -eq 0) { return }
+      $script:LastProgressRevision = [int]$payload.revision
+      $script:LastData = Merge-DisplayData -Previous $script:LastData -Incoming $payload.data
+      $script:RefreshError = ''
+      Render-Data $script:LastData
+      try { [void](Write-MobileUsagePending -Data $script:LastData -Settings $script:RemoteSettings -Path $script:MobileUsagePendingPath) }
+      catch { Write-TrayLog ('Partial mobile snapshot warning: ' + $_.Exception.Message) }
+    } catch { Write-TrayLog ('Partial refresh warning: ' + $_.Exception.Message) }
   }
 
   function Toggle-Popup {
@@ -990,7 +1029,9 @@ try {
   $script:Ball.BackColor = $script:Theme.BallBack
   $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (U 14),(U 10),(U 14),(U 10)
   if ($null -ne $script:UiSettings.ballX -and $null -ne $script:UiSettings.ballY) {
-    $ballPoint = Clamp-Location -X ([int]$script:UiSettings.ballX) -Y ([int]$script:UiSettings.ballY) -Width $script:Ball.Width -Height $(if ($script:UiSettings.compactMode) { U 64 } else { $script:Ball.Height })
+    $savedWidth = if ($script:UiSettings.ringMode) { B 60 } elseif (@(Get-ActiveIds).Count -eq 1) { B 220 } else { B 360 }
+    $savedHeight = if ($script:UiSettings.ringMode) { B (8 + 80 * [Math]::Max(1,@(Get-ActiveIds).Count * 2)) } elseif ($script:UiSettings.compactMode) { B 64 } else { B (Get-ExpandedHeight) }
+    $ballPoint = Clamp-Location -X ([int]$script:UiSettings.ballX) -Y ([int]$script:UiSettings.ballY) -Width $savedWidth -Height $savedHeight
   } else { $ballPoint = Get-DefaultBallLocation }
   $script:Ball.Location = $ballPoint
   $script:RestLocation = $ballPoint
@@ -1139,6 +1180,25 @@ try {
     if ($itemRings.Checked) { Snap-Monitor }
     Save-UiSettings
   })
+  $itemClear = $menu.Items.Add('清晰模式（不透明）')
+  $itemClear.CheckOnClick = $true
+  $itemClear.Checked = [bool]$script:UiSettings.clearMode
+  $itemClear.Add_Click({
+    $script:UiSettings.clearMode = $itemClear.Checked
+    Update-MonitorOpacity
+    Save-UiSettings
+  })
+  $sizeMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+  $sizeMenu.Text = '悬浮窗大小'
+  $script:MonitorSizeItems = @{}
+  foreach ($sizeOption in @(@{id='small';label='小'},@{id='medium';label='中'},@{id='large';label='大'})) {
+    $sizeItem = $sizeMenu.DropDownItems.Add($sizeOption.label)
+    $sizeItem.Tag = $sizeOption.id
+    $sizeItem.Checked = $script:UiSettings.monitorSize -eq $sizeOption.id
+    $sizeItem.Add_Click({ param($sender,$eventArgs) Set-MonitorSize ([string]$sender.Tag) })
+    $script:MonitorSizeItems[$sizeOption.id] = $sizeItem
+  }
+  [void]$menu.Items.Add($sizeMenu)
   $opacityMenu = New-Object System.Windows.Forms.ToolStripMenuItem
   $opacityMenu.Text = '紧凑小窗透明度'
   $opacityPanel = New-Object System.Windows.Forms.Panel
@@ -1306,6 +1366,14 @@ try {
   Apply-ProfileLayout
   $script:Ball.Add_ScaleChanged({ $script:Ball.Radius = B 16; Remember-MonitorPosition; if ($script:UiSettings.ringMode) { Set-MonitorExpanded $false } })
   $script:Popup.Add_ScaleChanged({ Update-CardWidths })
+  $desktopChangeHandler = {
+    param($sender,$eventArgs)
+    $script:DesktopRecoveryPending = $true
+    if ($sender.LastChangeWasResume) { $script:ResumeRefreshRequested = $true }
+  }
+  $script:Ball.Add_DisplayEnvironmentChanged($desktopChangeHandler)
+  $script:Popup.Add_DisplayEnvironmentChanged($desktopChangeHandler)
+  Set-MonitorSize ([string]$script:UiSettings.monitorSize) -Initial
   Set-MonitorExpanded (-not [bool]$script:UiSettings.compactMode)
   if ($script:UiSettings.ringMode) { Snap-Monitor }
   $script:NotifyIcon.Add_BalloonTipClicked({ $script:Popup.Show(); $script:Popup.Activate() })

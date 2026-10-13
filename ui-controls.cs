@@ -5,6 +5,13 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace CodexUsage {
+    public static class QuotaFormat {
+        public static string Percent(double value) {
+            if (value < 0 || Double.IsNaN(value) || Double.IsInfinity(value)) return "—";
+            if (value > 0 && value < 1) return "<1%";
+            return Math.Round(Math.Min(100, value), 0, MidpointRounding.AwayFromZero).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
+        }
+    }
     public static class NativeDisplay {
         [DllImport("user32.dll")] private static extern bool SetProcessDPIAware();
         [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
@@ -88,6 +95,7 @@ namespace CodexUsage {
         public string Caption { get; set; }
         public bool Stale { get; set; }
         public Color FillColor { get; set; }
+        public string ValueText { get { return QuotaFormat.Percent(Value) + (Stale ? "!" : ""); } }
         public QuotaRing() {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
                      ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
@@ -111,9 +119,7 @@ namespace CodexUsage {
                     e.Graphics.DrawArc(pen, ring, -90, (float)(Math.Min(100, Value) * 3.6));
                 }
             }
-            string valueText = Value < 0 || Double.IsNaN(Value) || Double.IsInfinity(Value)
-                ? "—" : Math.Round(Math.Max(0, Math.Min(100, Value))).ToString() + "%";
-            if (Stale) valueText += "!";
+            string valueText = ValueText;
             // Bounds already contain the monitor scale. Pixel fonts avoid
             // applying the graphics device's DPI a second time to point fonts.
             using (var valueFont = new Font("Segoe UI", 12 * scale, FontStyle.Bold, GraphicsUnit.Pixel))
@@ -179,9 +185,30 @@ namespace CodexUsage {
             return new Rectangle(Math.Max(area.Left, Math.Min(window.X, area.Right - width)), Math.Max(area.Top, Math.Min(window.Y, area.Bottom - height)), width, height);
         }
         public static void KeepVisible(Form form) {
-            var area = Screen.FromRectangle(form.Bounds).WorkingArea;
-            var bounds = Clamp(form.Bounds, area);
+            var screens = Screen.AllScreens;
+            var areas = new Rectangle[screens.Length];
+            for (int i = 0; i < screens.Length; i++) areas[i] = screens[i].WorkingArea;
+            var bounds = RestorePlacement(form.Bounds, areas);
             if (form.Bounds != bounds) form.Bounds = bounds;
+        }
+        public static Rectangle RestorePlacement(Rectangle window, Rectangle[] areas) {
+            if (areas == null || areas.Length == 0) return window;
+            Rectangle best = areas[0];
+            long bestOverlap = -1;
+            double bestDistance = Double.MaxValue;
+            foreach (Rectangle area in areas) {
+                if (area.Width <= 0 || area.Height <= 0) continue;
+                Rectangle overlap = Rectangle.Intersect(window, area);
+                long overlapSize = (long)Math.Max(0, overlap.Width) * Math.Max(0, overlap.Height);
+                double cx = window.X + window.Width / 2.0, cy = window.Y + window.Height / 2.0;
+                double dx = Math.Max(area.Left - cx, Math.Max(0, cx - area.Right));
+                double dy = Math.Max(area.Top - cy, Math.Max(0, cy - area.Bottom));
+                double distance = dx * dx + dy * dy;
+                if (overlapSize > bestOverlap || (overlapSize == bestOverlap && distance < bestDistance)) {
+                    best = area; bestOverlap = overlapSize; bestDistance = distance;
+                }
+            }
+            return Clamp(window, best);
         }
         public static string StartupCommand(string exe) {
             if (exe.IndexOf('"') >= 0 || !System.IO.Path.IsPathRooted(exe)) throw new ArgumentException("Invalid executable path.");
@@ -202,6 +229,8 @@ namespace CodexUsage {
     public class DpiForm : Form {
         public int DisplayDpi { get; set; }
         public event EventHandler ScaleChanged;
+        public event EventHandler DisplayEnvironmentChanged;
+        public bool LastChangeWasResume { get; private set; }
         public DpiForm() { DisplayDpi = 96; AutoScaleMode = AutoScaleMode.None; }
         static Padding ResizePadding(Padding p, float factor) { return new Padding((int)Math.Round(p.Left * factor), (int)Math.Round(p.Top * factor), (int)Math.Round(p.Right * factor), (int)Math.Round(p.Bottom * factor)); }
         readonly System.Collections.Generic.Dictionary<string, Font> dpiFonts = new System.Collections.Generic.Dictionary<string, Font>();
@@ -239,6 +268,19 @@ namespace CodexUsage {
             if (ScaleChanged != null) ScaleChanged(this, EventArgs.Empty);
             Invalidate(true);
         }
+        public void ApplyZoom(float factor) {
+            if (factor <= 0 || factor > 4) throw new ArgumentOutOfRangeException("factor");
+            SuspendLayout();
+            try {
+                foreach (Control child in Controls) ScaleTree(child, factor);
+                Padding = ResizePadding(Padding, factor);
+            } finally { ResumeLayout(true); }
+            Invalidate(true);
+        }
+        public void NotifyDisplayEnvironmentChanged(bool resumed) {
+            LastChangeWasResume = resumed;
+            if (DisplayEnvironmentChanged != null) DisplayEnvironmentChanged(this, EventArgs.Empty);
+        }
         protected override void Dispose(bool disposing) {
             base.Dispose(disposing);
             if (disposing) { foreach (var font in dpiFonts.Values) font.Dispose(); dpiFonts.Clear(); }
@@ -251,6 +293,9 @@ namespace CodexUsage {
                 return;
             }
             base.WndProc(ref message);
+            if (message.Msg == 0x007E) NotifyDisplayEnvironmentChanged(false); // WM_DISPLAYCHANGE
+            if (message.Msg == 0x0218 && (message.WParam.ToInt32() == 0x0007 || message.WParam.ToInt32() == 0x0012))
+                NotifyDisplayEnvironmentChanged(true); // WM_POWERBROADCAST: resume
         }
     }
 
@@ -263,12 +308,13 @@ namespace CodexUsage {
         public SplitQuotaLabel() { DoubleBuffered = true; ResizeRedraw = true; AccountName = ""; FiveText = LongText = "—"; FiveColor = LongColor = Color.White; }
         protected override void OnPaint(PaintEventArgs e) {
             base.OnPaint(e);
-            var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
-            int nameWidth = Width * 32 / 100, valueWidth = (Width - nameWidth - 10) / 2;
+            var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+            int separatorWidth = TextRenderer.MeasureText(e.Graphics, "/", Font, new Size(Int32.MaxValue, Height), flags).Width + Math.Max(4, Font.Height / 6);
+            int nameWidth = Width * 32 / 100, valueWidth = Math.Max(0, (Width - nameWidth - separatorWidth) / 2);
             TextRenderer.DrawText(e.Graphics, AccountName, Font, new Rectangle(0, 0, nameWidth, Height), ForeColor, flags);
             TextRenderer.DrawText(e.Graphics, FiveText, Font, new Rectangle(nameWidth, 0, valueWidth, Height), FiveColor, flags);
-            TextRenderer.DrawText(e.Graphics, "/", Font, new Rectangle(nameWidth + valueWidth, 0, 10, Height), Color.Gray, flags);
-            TextRenderer.DrawText(e.Graphics, LongText, Font, new Rectangle(nameWidth + valueWidth + 10, 0, valueWidth, Height), LongColor, flags);
+            TextRenderer.DrawText(e.Graphics, "/", Font, new Rectangle(nameWidth + valueWidth, 0, separatorWidth, Height), Color.Gray, flags);
+            TextRenderer.DrawText(e.Graphics, LongText, Font, new Rectangle(nameWidth + valueWidth + separatorWidth, 0, valueWidth, Height), LongColor, flags);
         }
     }
 }

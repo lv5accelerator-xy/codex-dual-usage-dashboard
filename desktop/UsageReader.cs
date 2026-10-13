@@ -132,26 +132,56 @@ namespace CodexUsageDesktop {
             return new { id = Text(Get(profile, "id")), label = Text(Get(profile, "label")), codexHome = Text(Get(profile, "codexHome")), ok = true, fetchedAt = DateTimeOffset.UtcNow.ToString("o"), planType = Text(Get(snapshot, "planType")), accountId = Get(result, "accountId"), ordinaryUsageAllowed = Get(result, "ordinaryUsageAllowed"), individualLimit = individual, fiveHour = windows.FirstOrDefault(w => Text(Get(w, "kind")) == "5h"), weekly = windows.FirstOrDefault(w => Text(Get(w, "kind")) == "weekly"), windows };
         }
         public static object ReadProfiles(string config, string cli) {
+            return ReadProfilesWithReader(config, profile => ConvertResult(profile, ReadRpc(ServerInfo(cli, Home(Text(Get(profile, "codexHome")))))), null);
+        }
+        public static object ReadProfilesWithReader(string config, Func<object, object> readProfile, Action<object, bool> publish) {
             var parsed = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(config, Encoding.UTF8));
             var profiles = Get(parsed, "profiles") as IEnumerable;
             if (profiles == null) throw new InvalidDataException("账号配置无效。");
-            var results = new List<object>();
+            var enabled = new List<object>();
             foreach (object profile in profiles) {
                 if (Get(profile, "enabled") is bool && !(bool)Get(profile, "enabled")) continue;
-                try { results.Add(ConvertResult(profile, ReadRpc(ServerInfo(cli, Home(Text(Get(profile, "codexHome"))))))); }
-                catch (Exception ex) { results.Add(new { id = Text(Get(profile, "id")), label = Text(Get(profile, "label")), ok = false, fetchedAt = DateTimeOffset.UtcNow.ToString("o"), error = ex.Message }); }
+                enabled.Add(profile);
             }
-            return new { profiles = results, fetchedAt = DateTimeOffset.UtcNow.ToString("o") };
+            var results = new object[enabled.Count];
+            object gate = new object();
+            int completed = 0;
+            Func<object> snapshot = delegate {
+                var display = new object[enabled.Count];
+                for (int i = 0; i < enabled.Count; i++) {
+                    object profile = enabled[i];
+                    display[i] = results[i] ?? new { id = Text(Get(profile, "id")), label = Text(Get(profile, "label")), ok = false, pending = true, fetchedAt = (string)null, error = "" };
+                }
+                return new { profiles = display, fetchedAt = DateTimeOffset.UtcNow.ToString("o") };
+            };
+            if (publish != null) publish(snapshot(), enabled.Count > 0);
+            Parallel.For(0, enabled.Count, new ParallelOptions { MaxDegreeOfParallelism = 2 }, index => {
+                object profile = enabled[index], result;
+                try { result = readProfile(profile); }
+                catch (Exception ex) { result = new { id = Text(Get(profile, "id")), label = Text(Get(profile, "label")), ok = false, fetchedAt = DateTimeOffset.UtcNow.ToString("o"), error = ex.Message }; }
+                lock (gate) {
+                    results[index] = result;
+                    completed++;
+                    // One writer publishes immutable snapshots; fast accounts
+                    // become visible while another account is still reading.
+                    if (publish != null) publish(snapshot(), completed < enabled.Count);
+                }
+            });
+            return snapshot();
         }
         public static int Run(string output) {
+            string readId = Environment.GetEnvironmentVariable("CODEX_USAGE_READ_ID") ?? "";
             try {
                 string data = Environment.GetEnvironmentVariable("CODEX_USAGE_DATA_DIR");
                 if (string.IsNullOrWhiteSpace(data)) throw new InvalidOperationException("客户端数据目录未配置。");
                 string cli = FindCli();
                 if (cli == null) throw new FileNotFoundException("未找到 Codex CLI，请打开“账号与首次使用”安装。");
-                Client.AtomicJson(output, new { ok = true, data = ReadProfiles(Path.Combine(data, "profiles.json"), cli) });
+                int revision = 0;
+                ReadProfilesWithReader(Path.Combine(data, "profiles.json"),
+                    profile => ConvertResult(profile, ReadRpc(ServerInfo(cli, Home(Text(Get(profile, "codexHome")))))),
+                    (snapshot, pending) => Client.AtomicJson(output, new { ok = true, readId, pending, revision = ++revision, data = snapshot }));
                 return 0;
-            } catch (Exception ex) { Client.AtomicJson(output, new { ok = false, error = ex.Message }); return 1; }
+            } catch (Exception ex) { Client.AtomicJson(output, new { ok = false, readId, error = ex.Message }); return 1; }
         }
     }
     // Killing the reader also closes this job, terminating cmd wrappers and server children.

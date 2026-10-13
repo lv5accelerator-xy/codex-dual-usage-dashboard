@@ -102,7 +102,9 @@ jobs:
           cat > release-notes.md <<'NOTES'
           Windows 10/11 desktop client. Download **CodexUsage.exe** and double-click it. Confirm “安装并启动” on first launch. Installation is per-user and creates shortcuts; no administrator access is needed. Windows Settings → Apps now includes an uninstall entry that preserves settings and account data.
 
-          v0.9.3 修复圆环首次启动时被 Windows 撑宽、右侧留白的问题，保持 60 逻辑像素宽。账号名与 5h / 长周期标签分成两行，修复文字截断及高 DPI 下字体重复缩放。长周期圆环提示现在使用实际显示的每周或月度额度重置时间。双账号高度为 328 逻辑像素，单账号为 168。
+          v0.9.4 统一桌面与手机的低额度显示：正数不足 1% 显示为 <1%，只有实际耗尽才显示 0%。新增“清晰模式（不透明）”和“悬浮窗大小 → 小 / 中 / 大”，设置会保留。打包客户端最多并行读取两个账号，先完成的账号立即更新，另一个保留上次成功值；悬停显示各账号最近更新时间。
+
+          增加显示器变化和睡眠恢复后的窗口恢复，恢复时重新读取额度。自动化覆盖三档大小、四种 DPI、模拟拔屏、分辨率变化、睡眠恢复和设置重载；当前实机只有一块显示器，混合 DPI 的物理多屏切换尚未验证。保留 v0.9.3 的首次启动窄窗、两行标签与长周期重置时间修复。
 
           保留 v0.9.2 的圆环自由拖动和四边吸附，以及 Windows 后台同步修复。保留 iPhone / Mobile PWA：Windows 端发送严格脱敏的额度快照，通过独立 ntfy topic 本地加密；手机使用 Web Crypto 验证并解密。手机同步可以独立启用，并包含重复抑制、五分钟心跳和网络退避；保留跨电脑完成通知。
 

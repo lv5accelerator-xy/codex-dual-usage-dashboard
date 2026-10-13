@@ -52,6 +52,10 @@ Assert-Mobile ((Get-MobileLongTermWindow $weeklyOnly).kind -eq 'weekly') 'Weekly
 Assert-Mobile ((Get-MobileLongTermWindow $workspaceOnly).remainingPercent -eq 0) 'Workspace-only zero percent must not become missing.'
 Assert-Mobile ((Get-MobileLongTermWindow $workspaceOnly).resetsAt -eq $workspaceOnly.individualLimit.resetsAt) 'Expired reset timestamps must be preserved for browser confirmation logic.'
 Assert-Mobile ($null -eq (Get-MobileLongTermWindow $missingLong)) 'Missing long-term windows must remain missing.'
+Assert-Mobile ((ConvertTo-MobilePercent 0.4) -eq 0.4) 'Mobile transport preserves sub-percent values.'
+Assert-Mobile ((ConvertTo-MobilePercent 0.0001) -eq 0.0001) 'Mobile transport never rounds positive quota down to zero.'
+Assert-Mobile ($null -eq (ConvertTo-MobilePercent ([double]::NaN))) 'Mobile transport rejects NaN.'
+Assert-Mobile ($null -eq (ConvertTo-MobilePercent -1)) 'Invalid negative quota remains missing.'
 $personal.stale = $true
 $staleSnapshot = New-MobileUsageSnapshot -Data ([pscustomobject]@{ profiles=@($personal) }) -Settings $settings -Now $now
 Assert-Mobile (-not [bool]$staleSnapshot.profiles[0].ok) 'Stale desktop data must be marked unavailable on mobile.'

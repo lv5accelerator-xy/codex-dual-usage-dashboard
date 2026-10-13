@@ -106,4 +106,23 @@ $resetFixture.individualLimit.resetsAt = $null
 Assert-Equal (Get-QuotaPair $resetFixture).longTermResetsAt $null 'Missing reset remains unknown'
 $resetFixture.ok = $false
 Assert-Equal (Get-QuotaPair $resetFixture).longTermResetsAt $null 'Failed response does not supply a reset'
+Assert-Equal (Format-Percent 0.4) '<1%' 'All views must preserve a small positive quota'
+Assert-Equal (Format-Percent 0.0001) '<1%' 'Tiny positive quota is not exhausted'
+Assert-Equal (Format-Percent 0) '0%' 'Only exact zero is exhausted'
+Assert-Equal (Format-Percent 120) '100%' 'Display percentages are bounded'
+Assert-Equal (Format-Percent -1) '—' 'Invalid negative quota remains unknown'
+Assert-Equal (Format-Percent ([double]::NaN)) '—' 'NaN remains unknown'
+Assert-Equal (Format-Percent ([double]::PositiveInfinity)) '—' 'Infinity remains unknown'
+Assert-Equal (Format-Percent 'bad') '—' 'Malformed quota remains unknown'
+Assert-Equal (Format-Percent 2.5) '3%' 'Midpoint rounding agrees with the native renderer'
+$pendingFixture = New-Profile 'personal' 0 40
+$pendingFixture.fetchedAt = [DateTimeOffset]::Now.ToString('o')
+$pendingData = [pscustomobject]@{profiles=@($pendingFixture);fetchedAt=$pendingFixture.fetchedAt}
+$incomingPending = [pscustomobject]@{profiles=@([pscustomobject]@{id='personal';ok=$false;pending=$true;error=''});fetchedAt=$pendingFixture.fetchedAt}
+$mergedPending = Merge-DisplayData $pendingData $incomingPending
+Assert-Equal $mergedPending.profiles[0].fiveHour.remainingPercent 0 'Pending refresh retains the last successful value'
+Assert-Equal $mergedPending.profiles[0].pending $true 'Pending state is retained separately from failures'
+Assert-Equal $mergedPending.profiles[0].stale $false 'Fresh pending values are not marked as failed'
+Assert-Equal $mergedPending.profiles[0].fetchedAt $pendingFixture.fetchedAt 'Pending refresh retains the account timestamp'
+Assert-Equal ((Get-ProfileUpdateText $mergedPending.profiles[0]) -match '正在读取') $true 'Update tooltip identifies the pending account'
 Write-Output "UI model: $script:Checks checks passed."

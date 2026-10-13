@@ -48,10 +48,12 @@ function Merge-DisplayData {
     $source = $profile
     $stale = -not $profile.ok
     # Match by account ID, never by list position. Retain last success only for this account.
-    if ($stale -and $null -ne $old -and $old.ok) { $source = $old }
+    if (-not $profile.ok -and $null -ne $old -and $old.ok) { $source = $old }
+    if ($profile.pending -and $null -ne $old -and $old.ok) { $stale = Test-ProfileStale $old }
     $copy = [ordered]@{}
     foreach ($property in $source.PSObject.Properties) { $copy[$property.Name] = $property.Value }
     $copy['stale'] = $stale
+    $copy['pending'] = [bool]$profile.pending
     $copy['refreshError'] = if ($stale) { [string]$profile.error } else { '' }
     $profiles += [pscustomobject]$copy
   }
@@ -69,7 +71,12 @@ function Test-ProfileStale {
 function Format-Percent {
   param($Value)
   if ($null -eq $Value) { return '—' }
-  try { return ('{0:0}%' -f [double]$Value) } catch { return '—' }
+  try {
+    $number = [double]$Value
+    if ([double]::IsNaN($number) -or [double]::IsInfinity($number) -or $number -lt 0) { return '—' }
+    if ($number -gt 0 -and $number -lt 1) { return '<1%' }
+    return ('{0:0}%' -f [Math]::Round([Math]::Min([double]100,$number),0,[MidpointRounding]::AwayFromZero))
+  } catch { return '—' }
 }
 
 function Get-ResetText {
@@ -87,8 +94,16 @@ function Get-ResetText {
 # A compact pair is two independent remaining percentages, never a ratio or sum.
 function Format-CompactPercent {
   param($Value)
-  if ($null -ne $Value -and [double]$Value -gt 0 -and [double]$Value -lt 1) { return '<1%' }
   return Format-Percent $Value
+}
+
+function Get-ProfileUpdateText {
+  param($Profile)
+  $time = [DateTimeOffset]::MinValue
+  $stamp = if ($null -ne $Profile -and $Profile.ok -and [DateTimeOffset]::TryParse([string]$Profile.fetchedAt,[ref]$time)) {
+    $time.ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss zzz')
+  } else { '尚无成功更新' }
+  return ('最近更新：' + $stamp + $(if ($Profile.pending) { ' · 正在读取' } elseif (Test-ProfileStale $Profile) { ' · 数据未更新' } else { '' }))
 }
 
 function Get-CompactRecovery {

@@ -18,7 +18,11 @@ function Write-AtomicUtf8Json {
 function ConvertTo-MobilePercent {
   param($Value)
   if ($null -eq $Value) { return $null }
-  try { return [Math]::Max(0,[Math]::Min(100,[Math]::Round([double]$Value,2))) } catch { return $null }
+  try {
+    $number = [double]$Value
+    if ([double]::IsNaN($number) -or [double]::IsInfinity($number) -or $number -lt 0) { return $null }
+    return [Math]::Min([double]100,$number)
+  } catch { return $null }
 }
 
 function ConvertTo-MobileWindow {

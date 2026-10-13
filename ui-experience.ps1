@@ -55,7 +55,26 @@ function Get-ExpandedHeight {
 function B {
   param([double]$Value)
   $scale = if ($null -ne $script:Ball) { $script:Ball.DisplayDpi / 96.0 } else { $script:UiScale }
-  return [int][Math]::Round($Value * $scale)
+  return [int][Math]::Round($Value * $scale * (Get-MonitorSizeScale ([string]$script:UiSettings.monitorSize)))
+}
+function Get-MonitorSizeScale {
+  param([string]$Size)
+  if ($Size -eq 'medium') { return 1.2 }
+  if ($Size -eq 'large') { return 1.4 }
+  return 1.0
+}
+function Set-MonitorSize {
+  param([ValidateSet('small','medium','large')][string]$Size,[switch]$Initial)
+  $scale = Get-MonitorSizeScale $Size
+  Remember-MonitorPosition
+  $script:UiSettings.monitorSize = $Size
+  $script:Ball.ApplyZoom([single]($scale / $script:AppliedMonitorScale))
+  $script:AppliedMonitorScale = $scale
+  $script:Ball.Radius = B 16
+  Set-MonitorExpanded $script:MonitorExpanded
+  foreach ($id in @('small','medium','large')) { $script:MonitorSizeItems[$id].Checked = $id -eq $Size }
+  Remember-MonitorPosition
+  if (-not $Initial) { Save-UiSettings }
 }
 function Apply-ProfileLayout {
   $active = @(Get-ActiveIds)
@@ -212,6 +231,7 @@ function Show-AccountSettings {
 }
 function Update-DesktopExperience {
   if ($SmokeTest -or $script:Exiting) { return }
+  if ($script:DesktopRecoveryPending) { Restore-DesktopLayout }
   if ($null -eq $script:BallMouseDown) {
     $before = $script:Ball.Location
     [CodexUsage.DesktopIntegration]::KeepVisible($script:Ball)
@@ -237,4 +257,24 @@ function Update-DesktopExperience {
       }
     }
   }
+}
+
+function Restore-DesktopLayout {
+  if ($null -ne $script:BallMouseDown) { return }
+  [CodexUsage.DesktopIntegration]::KeepVisible($script:Ball)
+  [CodexUsage.DesktopIntegration]::KeepVisible($script:Popup)
+  Remember-MonitorPosition
+  Set-MonitorExpanded $script:MonitorExpanded
+  $script:DesktopRecoveryPending = $false
+  if ($script:ResumeRefreshRequested) {
+    if ($null -ne $script:WorkerProcess) {
+      try { if (-not $script:WorkerProcess.HasExited) { $script:WorkerProcess.Kill(); [void]$script:WorkerProcess.WaitForExit(1000) } } catch {}
+      $script:WorkerProcess.Dispose(); $script:WorkerProcess = $null
+      if ($null -ne $script:PollTimer) { $script:PollTimer.Stop() }
+    }
+    $script:RefreshPending = $false
+    $script:ResumeRefreshRequested = $false
+    if (-not $SmokeTest) { Start-Refresh -Silent }
+  }
+  Save-UiSettings
 }

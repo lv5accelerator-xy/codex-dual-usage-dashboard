@@ -1,13 +1,13 @@
 'use strict';
 
-const CACHE_NAME = 'codex-usage-shell-v1';
+const CACHE_NAME = 'codex-usage-shell-v0.9.4';
 const SHELL = [
   './', './index.html', './styles.css', './crypto.js', './model.js', './app.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL.map((path) => new Request(path, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {

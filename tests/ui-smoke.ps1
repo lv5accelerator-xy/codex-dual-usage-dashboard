@@ -130,6 +130,7 @@ $clamped = [CodexUsage.DesktopIntegration]::Clamp($offscreenFixture,$monitorFixt
 Assert-Ui ($monitorFixture.Contains($clamped)) 'Disconnected-display window is moved into working area.'
 Assert-Ui ([CodexUsage.DesktopIntegration]::StartupCommand('C:\Program Files\CodexUsage.exe') -eq '"C:\Program Files\CodexUsage.exe"') 'Startup path with spaces is quoted.'
 # Compact presentation and anchor geometry use real native controls.
+. (Join-Path $PSScriptRoot 'experience.tests.ps1')
 Assert-Ui (-not $script:UiSettings.notificationsEnabled) 'Notifications must be off by default.'
 Set-MonitorExpanded $false
 [System.Windows.Forms.Application]::DoEvents()

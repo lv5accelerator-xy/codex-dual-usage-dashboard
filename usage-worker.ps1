@@ -33,6 +33,7 @@ try {
   $data = Get-CodexUsageAllProfiles -ConfigPath $configPath -CodexPath $codexPath
   $payload = [pscustomobject]@{
     ok = $true
+    readId = $env:CODEX_USAGE_READ_ID
     generatedAt = (Get-Date).ToUniversalTime().ToString('o')
     data = $data
   }
@@ -48,6 +49,7 @@ try {
   try {
     $payload = [pscustomobject]@{
       ok = $false
+      readId = $env:CODEX_USAGE_READ_ID
       generatedAt = (Get-Date).ToUniversalTime().ToString('o')
       error = $msg
       detail = $detail

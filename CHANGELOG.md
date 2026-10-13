@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.4 - 2026-10-13
+
+- Preserve positive quota below 1% as `<1%` in desktop and mobile views, including the mobile transport; missing and invalid values stay unknown.
+- Add opaque clear mode and small/medium/large monitor sizes, with persisted preferences and consistent size/DPI rounding.
+- Run up to two native account readers concurrently and publish each result independently; retain pending-account data and expose per-account update timestamps.
+- Recover visible placement after display changes and resume, refresh after resume, and preserve the actual monitor dimensions when restoring saved ring positions.
+- Add native size/DPI, display-removal, resume, restart, partial-result and bounded-concurrency regression fixtures; physical mixed-DPI display verification remains separate.
+
 ## 0.9.3 - 2026-10-13
 
 - Preserve the borderless ring strip's requested width before its first frame; Windows previously widened it to the minimum tracking width on startup.

@@ -17,6 +17,13 @@ function check(condition, message) {
 }
 
 (async () => {
+  check(CodexMobileModel.formatPercent(0.4) === '<1%', 'Mobile preserves a small positive quota.');
+  check(CodexMobileModel.formatPercent(0.0001) === '<1%', 'Mobile preserves a tiny positive quota.');
+  check(CodexMobileModel.formatPercent(0) === '0%', 'Only exact zero is exhausted.');
+  check(CodexMobileModel.formatPercent(null) === '—', 'Missing quota is unknown.');
+  check(CodexMobileModel.formatPercent(NaN) === '—', 'Invalid quota is unknown.');
+  check(CodexMobileModel.formatPercent(2.5) === '3%', 'Mobile uses the desktop rounding rule.');
+  check(CodexMobileModel.clampPercent(null) === null, 'Missing numeric fields do not become zero.');
   check(await CodexCrypto.deriveUsageTopic(vector.pairKey) === vector.usageTopic, 'JS topic must equal the PowerShell vector.');
   check(await CodexCrypto.decryptRemoteMessage(vector.cipherText, vector.pairKey) === vector.plainText, 'JS must decrypt the PowerShell AES-CBC fixture.');
 

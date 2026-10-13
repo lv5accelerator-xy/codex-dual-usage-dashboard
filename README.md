@@ -2,7 +2,7 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.9.3**
+Current version: **v0.9.4**
 
 ## Windows EXE client (recommended)
 
@@ -104,9 +104,11 @@ This release advances the C# migration; it does not remove the Windows PowerShel
 
 ## v0.4.2: adjustable compact transparency and one-minute refresh
 
-The compact strip defaults to **20% transparency** (80% opacity). Right-click **紧凑小窗透明度** and move the slider to choose **0–60% transparency**. Changes apply immediately and are remembered after restart. Windows opacity affects the entire compact window, including its text; hovering to expand restores full opacity for readability. The detail panel remains fully opaque.
+The monitor defaults to **清晰模式（不透明）** for readable text. Disable this right-click option to restore the saved transparency: **紧凑小窗透明度** selects **0–60% transparency**, initially 20%. Clear mode disables the slider and preserves its saved value. Windows opacity affects the entire window, including text; the expanded monitor and detail panel remain fully opaque. **悬浮窗大小 → 小 / 中 / 大** selects 100%, 120%, or 140% size independently of monitor DPI, including the rings, compact strip and expanded monitor. Both preferences survive restarts.
 
 Automatic quota refresh now runs every **60 seconds**. If a read is still running, the next tick is skipped rather than starting an overlapping worker.
+
+The packaged native reader runs up to two account reads concurrently, with independent RPC timeouts and per-account success/error results. Each completed account is displayed immediately while the other keeps its last successful values; hover over a quota or account to see that account's own update time. The UI rejects progress from an outdated account configuration. Display-change and resume messages restore visible window placement; resume cancels an obsolete reader and requests fresh data. Automated fixtures cover simulated mixed-DPI displays, disconnection, resolution reduction, resume and persisted restart placement. Physical mixed-DPI multi-monitor testing remains a separate device check.
 
 ## v0.4.1: compact mode, edge snapping, optional alerts
 
@@ -127,7 +129,7 @@ The monitor now starts as a **360 × 64 logical-pixel strip** (220 pixels wide w
 
 Right-click **贴边圆环（点击查看详情）** to show each enabled account's **5h** and **long-term** remaining quota as separate rings. Rings always form one vertical column, even at the top/bottom edge. The strip is 60 logical pixels wide; each ring is 40 pixels across. Account names and quota-window labels occupy separate lines, making the strip 328 logical pixels tall for two accounts or 168 for one. The narrow width is preserved on first show, and ring text scales once with monitor DPI. Drag the group to any edge. Click a ring to open details, hover for its full account name, freshness information and the displayed quota's reset time, or right-click to switch back. The mode and position survive restarts. Compact opacity also applies to rings.
 
-Missing values display **—**, exhausted quota displays **0%**, and stale values are muted and marked **!**. Ring mode stays compact while hovering. It can stay anywhere in the working area. When **贴边吸附** is enabled, releasing within 20 logical pixels of any edge snaps to that edge; drag away to detach. Disable **贴边吸附** for fully free placement.
+Missing values display **—**, positive quota below 1% displays **<1%** across desktop and mobile views, exhausted quota displays **0%**, and stale values are muted and marked **!**. Ring mode stays compact while hovering. It can stay anywhere in the working area. When **贴边吸附** is enabled, releasing within 20 logical pixels of any edge snaps to that edge; drag away to detach. Disable **贴边吸附** for fully free placement.
 
 v0.9.0 also includes the Windows remote-worker HOME-variable fix from PR #4. Install and restart the new desktop build to apply it; a successful build alone does not verify real iPhone synchronization.
 

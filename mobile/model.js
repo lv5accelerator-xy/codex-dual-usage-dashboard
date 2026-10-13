@@ -2,6 +2,7 @@
   'use strict';
 
   function clampPercent(value) {
+    if (value === null || value === undefined || typeof value === 'boolean' || (typeof value === 'string' && !value.trim())) return null;
     const number = Number(value);
     if (!Number.isFinite(number)) return null;
     return Math.max(0, Math.min(100, number));
@@ -9,6 +10,13 @@
 
   function validDate(value) {
     return typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value));
+  }
+
+  function formatPercent(value) {
+    const percentage = clampPercent(value);
+    if (percentage === null) return '—';
+    if (percentage > 0 && percentage < 1) return '<1%';
+    return `${Math.round(percentage)}%`;
   }
 
   function normalizeWindow(value, expectedKind) {
@@ -92,5 +100,5 @@
     return 'normal';
   }
 
-  scope.CodexMobileModel = Object.freeze({ clampPercent, validateSnapshot, getFreshness, formatCountdown, formatAge, quotaTone });
+  scope.CodexMobileModel = Object.freeze({ clampPercent, formatPercent, validateSnapshot, getFreshness, formatCountdown, formatAge, quotaTone });
 })(globalThis);

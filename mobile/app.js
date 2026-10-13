@@ -70,7 +70,7 @@
     const heading = makeElement('div', 'quota-heading');
     heading.append(makeElement('span', '', label));
     const percentage = windowValue ? CodexMobileModel.clampPercent(windowValue.remainingPercent) : null;
-    heading.append(makeElement('strong', '', percentage === null ? '—' : `${Math.round(percentage)}%`));
+    heading.append(makeElement('strong', '', CodexMobileModel.formatPercent(percentage)));
     block.append(heading);
     const track = makeElement('div', 'quota-track');
     track.setAttribute('role', 'progressbar');
