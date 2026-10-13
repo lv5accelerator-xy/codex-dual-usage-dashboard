@@ -2,7 +2,7 @@
 
 Windows desktop quota monitor for two ChatGPT/Codex accounts: Personal + Work.
 
-Current version: **v0.9.2**
+Current version: **v0.9.3**
 
 ## Windows EXE client (recommended)
 

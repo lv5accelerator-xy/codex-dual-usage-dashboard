@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.3 - 2026-10-13
 
 - Preserve the borderless ring strip's requested width before its first frame; Windows previously widened it to the minimum tracking width on startup.
 - Split account and quota-window captions into two lines while keeping the strip 60 logical pixels wide.
