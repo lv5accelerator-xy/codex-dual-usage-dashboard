@@ -317,7 +317,7 @@ try {
     $active = @(Get-ActiveIds)
     $count = [Math]::Max(1,$active.Count * 2)
     $width = 60
-    $height = 8 + 68 * $count
+    $height = 8 + 80 * $count
     $script:Ball.Padding = New-Object System.Windows.Forms.Padding -ArgumentList (B 4)
     $script:Ball.ClientSize = New-Object System.Drawing.Size -ArgumentList (B $width),(B $height)
     $index = 0
@@ -326,7 +326,7 @@ try {
         $ring = $script:RingCells[($id + '-' + $window)]
         $ring.Visible = $id -in $active
         if ($id -notin $active) { continue }
-        $ring.SetBounds(0,(B (68 * $index)),(B 52),(B 68))
+        $ring.SetBounds(0,(B (80 * $index)),(B 52),(B 80))
         $index++
       }
     }
@@ -602,11 +602,12 @@ try {
         $value = if ($window -eq 'five') { $pair.fiveHour } else { $pair.longTerm }
         $ring.Value = if ($null -eq $value) { -1 } else { [double]$value }
         $ring.Stale = $stale
-        $ring.Caption = (Get-AccountName $id) + $(if ($window -eq 'five') { ' · 5h' } else { ' · 长周期' })
+        $ring.Caption = (Get-AccountName $id) + "`n" + $(if ($window -eq 'five') { '5h' } else { '长周期' })
         $ring.ForeColor = Get-ValueColor $value $stale
         $ring.FillColor = $ring.ForeColor
-        $ring.AccessibleName = $ring.Caption + ' 剩余 ' + (Format-Percent $value) + $(if ($stale) { ' 数据未更新' } else { '' })
-        $script:ToolTip.SetToolTip($ring,($ring.AccessibleName + "`r`n" + $tip + "`r`n" + (Get-ResetText ([string]$profile.fiveHour.resetsAt))))
+        $ring.AccessibleName = $ring.Caption.Replace("`n",' · ') + ' 剩余 ' + (Format-Percent $value) + $(if ($stale) { ' 数据未更新' } else { '' })
+        $ringReset = if ($window -eq 'five') { $profile.fiveHour.resetsAt } else { $pair.longTermResetsAt }
+        $script:ToolTip.SetToolTip($ring,($ring.AccessibleName + "`r`n" + $tip + "`r`n" + (Get-ResetText ([string]$ringReset))))
         $ring.Invalidate()
       }
       if ($script:CompactCells.ContainsKey($id)) {

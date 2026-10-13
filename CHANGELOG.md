@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Preserve the borderless ring strip's requested width before its first frame; Windows previously widened it to the minimum tracking width on startup.
+- Split account and quota-window captions into two lines while keeping the strip 60 logical pixels wide.
+- Use pixel fonts for already-scaled ring geometry to avoid applying monitor DPI twice.
+- Show the selected weekly/monthly quota's reset time in long-term ring tooltips, with first-show and DPI regression coverage.
+
 ## 0.8.0 - 2026-09-28
 
 - Added the installable Codex Usage Mobile PWA for iPhone, iPad, and desktop browsers.

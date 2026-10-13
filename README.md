@@ -125,7 +125,7 @@ The monitor now starts as a **360 × 64 logical-pixel strip** (220 pixels wide w
 
 ## Edge ring mode
 
-Right-click **贴边圆环（点击查看详情）** to show each enabled account's **5h** and **long-term** remaining quota as separate rings. Rings always form one vertical column, even at the top/bottom edge. The strip is 60 logical pixels wide (down from 76); each ring is 40 pixels across. Drag the group to any edge. Click a ring to open details, hover for its full account name and freshness information, or right-click to switch back. The mode and position survive restarts. Compact opacity also applies to rings.
+Right-click **贴边圆环（点击查看详情）** to show each enabled account's **5h** and **long-term** remaining quota as separate rings. Rings always form one vertical column, even at the top/bottom edge. The strip is 60 logical pixels wide; each ring is 40 pixels across. Account names and quota-window labels occupy separate lines, making the strip 328 logical pixels tall for two accounts or 168 for one. The narrow width is preserved on first show, and ring text scales once with monitor DPI. Drag the group to any edge. Click a ring to open details, hover for its full account name, freshness information and the displayed quota's reset time, or right-click to switch back. The mode and position survive restarts. Compact opacity also applies to rings.
 
 Missing values display **—**, exhausted quota displays **0%**, and stale values are muted and marked **!**. Ring mode stays compact while hovering. It can stay anywhere in the working area. When **贴边吸附** is enabled, releasing within 20 logical pixels of any edge snaps to that edge; drag away to detach. Disable **贴边吸附** for fully free placement.
 

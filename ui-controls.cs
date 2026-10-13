@@ -58,6 +58,14 @@ namespace CodexUsage {
     public class FloatingForm : DpiForm {
         public int Radius { get; set; }
         public FloatingForm() { DoubleBuffered = true; Radius = 16; }
+        protected override void CreateHandle() {
+            // Windows expands a new top-level window to its minimum tracking
+            // width. Restore the borderless client size before its first frame.
+            Size requestedSize = ClientSize;
+            base.CreateHandle();
+            if (FormBorderStyle == FormBorderStyle.None && ClientSize != requestedSize)
+                ClientSize = requestedSize;
+        }
         protected override void OnSizeChanged(EventArgs e) {
             base.OnSizeChanged(e);
             if (Width < 2 || Height < 2) return;
@@ -106,13 +114,18 @@ namespace CodexUsage {
             string valueText = Value < 0 || Double.IsNaN(Value) || Double.IsInfinity(Value)
                 ? "—" : Math.Round(Math.Max(0, Math.Min(100, Value))).ToString() + "%";
             if (Stale) valueText += "!";
-            using (var valueFont = new Font("Segoe UI", 9 * scale, FontStyle.Bold, GraphicsUnit.Point))
-            using (var captionFont = new Font("Microsoft YaHei UI", 7 * scale, FontStyle.Regular, GraphicsUnit.Point)) {
+            // Bounds already contain the monitor scale. Pixel fonts avoid
+            // applying the graphics device's DPI a second time to point fonts.
+            using (var valueFont = new Font("Segoe UI", 12 * scale, FontStyle.Bold, GraphicsUnit.Pixel))
+            using (var captionFont = new Font("Microsoft YaHei UI", (28f / 3) * scale, FontStyle.Regular, GraphicsUnit.Pixel)) {
                 TextRenderer.DrawText(e.Graphics, valueText, valueFont, Rectangle.Round(ring), ForeColor,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-                TextRenderer.DrawText(e.Graphics, Caption, captionFont,
-                    new Rectangle(0, (int)(49 * scale), Width, (int)(16 * scale)), ForeColor,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+                string[] lines = (Caption ?? "").Split(new char[] { '\n' }, 2);
+                var flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
+                for (int i = 0; i < lines.Length; i++)
+                    TextRenderer.DrawText(e.Graphics, lines[i], captionFont,
+                        new Rectangle(0, (int)((46 + 16 * i) * scale), Width, (int)(16 * scale)), ForeColor, flags);
             }
         }
     }

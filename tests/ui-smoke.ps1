@@ -1,8 +1,11 @@
 ﻿# Dot-sourced only by tray.ps1 -SmokeTest, after constructing the real WinForms controls.
 # No account access, network I/O, saved UI changes, or refresh worker is used.
+$script:UiChecks = 0
 function Assert-Ui([bool]$Condition,[string]$Message) {
   if (-not $Condition) { throw ('UI smoke test: ' + $Message) }
+  $script:UiChecks++
 }
+. (Join-Path $PSScriptRoot 'ring-controls.tests.ps1')
 $fixtureTime = [DateTimeOffset]::Now.ToString('o')
 $resetTime = [DateTimeOffset]::Now.AddHours(2).ToString('o')
 $sample = [pscustomobject]@{
@@ -269,7 +272,7 @@ foreach ($edge in @('left','right','top','bottom')) {
   Set-MonitorExpanded $false
   [System.Windows.Forms.Application]::DoEvents()
   $area = [System.Windows.Forms.Screen]::FromRectangle($script:Ball.Bounds).WorkingArea
-  Assert-Ui ($script:Ball.Width -eq (B 60) -and $script:Ball.Height -eq (B 280)) 'All edges must use the same narrow vertical stack.'
+  Assert-Ui ($script:Ball.Width -eq (B 60) -and $script:Ball.Height -eq (B 328)) 'All edges must use the same narrow vertical stack with two caption lines.'
   Assert-Ui ($script:RingCells['work-long'].Top -gt $script:RingCells['personal-five'].Top) 'Rings must stay vertically ordered.'
   Assert-Ui ($area.Contains($script:Ball.Bounds)) 'Rings must remain inside the working area.'
   if ($edge -eq 'left') { Assert-Ui ($script:Ball.Left -eq $area.Left) 'Left dock must remain flush.' }
@@ -278,6 +281,8 @@ foreach ($edge in @('left','right','top','bottom')) {
   if ($edge -eq 'bottom') { Assert-Ui ($script:Ball.Bottom -eq $area.Bottom) 'Bottom dock must remain flush.' }
   Assert-Ui ($script:RingCells['personal-five'].Value -eq 100) 'Ring must show remaining five-hour quota.'
   Assert-Ui ($script:RingCells['work-long'].Value -eq 21) 'Ring must show the limiting long-term quota.'
+  Assert-Ui ($script:RingCells['personal-five'].Caption -eq "个人`n5h") 'Five-hour ring separates account and window labels.'
+  Assert-Ui ($script:RingCells['work-long'].Caption -eq "工作`n长周期") 'Long-term ring keeps the complete window label.'
   foreach ($ring in $script:RingCells.Values) {
     Assert-Ui ($script:RingPanel.ClientRectangle.Contains($ring.Bounds)) 'Every ring must fit its panel.'
   }
@@ -287,6 +292,41 @@ foreach ($edge in @('left','right','top','bottom')) {
     $bitmap.Save((Join-Path $outputDir ('rings-' + $edge + '.png')),[System.Drawing.Imaging.ImageFormat]::Png)
   } finally { $bitmap.Dispose() }
 }
+# Render monitor-scale transitions on the real ring controls.
+$originalRingDpi = $script:Ball.DisplayDpi
+try {
+  foreach ($dpi in @(96,120,144,192)) {
+    $bounds = New-Object System.Drawing.Rectangle -ArgumentList $script:Ball.Left,$script:Ball.Top,([int](60 * $dpi / 96)),([int](328 * $dpi / 96))
+    $script:Ball.ApplyDpi($dpi,$bounds)
+    [System.Windows.Forms.Application]::DoEvents()
+    Assert-Ui ($script:Ball.Width -eq (B 60) -and $script:Ball.Height -eq (B 328)) 'Ring geometry must remain narrow through DPI transitions.'
+    foreach ($ring in $script:RingCells.Values) {
+      Assert-Ui ($script:RingPanel.ClientRectangle.Contains($ring.Bounds)) 'DPI-scaled rings and caption areas must fit the panel.'
+    }
+    $bitmap = New-Object System.Drawing.Bitmap -ArgumentList $script:Ball.Width,$script:Ball.Height
+    try {
+      $script:Ball.DrawToBitmap($bitmap,(New-Object System.Drawing.Rectangle -ArgumentList 0,0,$bitmap.Width,$bitmap.Height))
+      $bitmap.Save((Join-Path $outputDir ('rings-dpi-' + $dpi + '.png')),[System.Drawing.Imaging.ImageFormat]::Png)
+    } finally { $bitmap.Dispose() }
+  }
+} finally {
+  $bounds = New-Object System.Drawing.Rectangle -ArgumentList $script:Ball.Left,$script:Ball.Top,([int](60 * $originalRingDpi / 96)),([int](328 * $originalRingDpi / 96))
+  $script:Ball.ApplyDpi($originalRingDpi,$bounds)
+}
+# Tooltip reset must belong to the quota actually displayed by that ring.
+$tooltipFixture = $ringSample | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+$tooltipFixture.profiles[1].weekly.resetsAt = [DateTimeOffset]::Now.AddDays(3).AddHours(1).ToString('o')
+$tooltipFixture.profiles[1].individualLimit.resetsAt = [DateTimeOffset]::Now.AddDays(20).AddHours(1).ToString('o')
+Update-BallSummary $tooltipFixture
+$longTip = $script:ToolTip.GetToolTip($script:RingCells['work-long'])
+Assert-Ui ($longTip.EndsWith((Get-ResetText $tooltipFixture.profiles[1].weekly.resetsAt))) 'Weekly-limited ring tooltip uses the weekly reset.'
+$tooltipFixture.profiles[1].individualLimit.remainingPercent = 10
+Update-BallSummary $tooltipFixture
+$longTip = $script:ToolTip.GetToolTip($script:RingCells['work-long'])
+Assert-Ui ($longTip.EndsWith((Get-ResetText $tooltipFixture.profiles[1].individualLimit.resetsAt))) 'Monthly-limited ring tooltip uses the monthly reset.'
+$fiveTip = $script:ToolTip.GetToolTip($script:RingCells['work-five'])
+Assert-Ui ($fiveTip.EndsWith((Get-ResetText $tooltipFixture.profiles[1].fiveHour.resetsAt))) 'Five-hour ring tooltip keeps its five-hour reset.'
+Update-BallSummary $ringSample
 # Exercise release-time snap rules on the real ring window, not saved dock flags.
 $area = [System.Windows.Forms.Screen]::FromRectangle($script:Ball.Bounds).WorkingArea
 $centerX = $area.Left + [int](($area.Width - $script:Ball.Width) / 2)
@@ -317,7 +357,7 @@ $script:UiSettings.edgeSnap = $true
 $script:ProfileConfig.profiles[1].enabled = $false
 Apply-ProfileLayout
 Assert-Ui (-not $script:RingCells['work-five'].Visible) 'Disabled accounts must not leave visible rings.'
-Assert-Ui ($script:Ball.Width -eq (B 60) -and $script:Ball.Height -eq (B 144)) 'Single account must use two narrow vertically stacked rings.'
+Assert-Ui ($script:Ball.Width -eq (B 60) -and $script:Ball.Height -eq (B 168)) 'Single account must use two narrow vertically stacked rings.'
 $script:ProfileConfig.profiles[1].enabled = $true
 Apply-ProfileLayout
 $script:RefreshError = 'fixture offline'
@@ -369,4 +409,5 @@ if (-not $env:CODEX_USAGE_CLIENT_VERSION) {
   Assert-Ui (($measurements[3].private - $measurements[0].private) -lt 64MB) 'Private memory growth must remain bounded after warmup.'
   Assert-Ui (($measurements[3].handles - $measurements[0].handles) -lt 100) 'Repeated refreshes must not leak process handles.'
 }
+Write-Output "Windows UI: $script:UiChecks checks passed."
 

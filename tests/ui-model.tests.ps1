@@ -90,4 +90,20 @@ $due.fiveHour | Add-Member -NotePropertyName resetsAt -NotePropertyValue ($now.A
 Assert-Equal ([string]::IsNullOrEmpty((Get-RecoveryKey $due $now))) $false 'Exhausted reset triggers a refresh key'
 $due.fiveHour.remainingPercent = 1
 Assert-Equal (Get-RecoveryKey $due $now) $null 'Available quota does not trigger recovery refresh'
+$resetFixture = New-Profile 'work' 40 30
+$weeklyReset = $now.AddDays(3).ToString('o')
+$monthlyReset = $now.AddDays(20).ToString('o')
+$resetFixture.weekly | Add-Member -NotePropertyName resetsAt -NotePropertyValue $weeklyReset
+$resetFixture.individualLimit = [pscustomobject]@{ limit=100; remainingPercent=50; resetsAt=$monthlyReset }
+Assert-Equal (Get-QuotaPair $resetFixture).longTermResetsAt $weeklyReset 'Weekly-limited display carries the weekly reset'
+$resetFixture.individualLimit.remainingPercent = 10
+Assert-Equal (Get-QuotaPair $resetFixture).longTermResetsAt $monthlyReset 'Monthly-limited display carries the monthly reset'
+$resetFixture.individualLimit.remainingPercent = 30
+Assert-Equal (Get-QuotaPair $resetFixture).longTermResetsAt $weeklyReset 'Equal quotas retain the weekly source and reset'
+$resetFixture.weekly = $null
+Assert-Equal (Get-QuotaPair $resetFixture).longTermResetsAt $monthlyReset 'Monthly-only quota carries its own reset'
+$resetFixture.individualLimit.resetsAt = $null
+Assert-Equal (Get-QuotaPair $resetFixture).longTermResetsAt $null 'Missing reset remains unknown'
+$resetFixture.ok = $false
+Assert-Equal (Get-QuotaPair $resetFixture).longTermResetsAt $null 'Failed response does not supply a reset'
 Write-Output "UI model: $script:Checks checks passed."
