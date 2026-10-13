@@ -10,22 +10,25 @@ function Get-QuotaPair {
   param($Profile)
   $fiveHour = $null
   $longTerm = $null
+  $longTermResetsAt = $null
   $source = '未提供'
   if ($null -ne $Profile -and $Profile.ok) {
     if ($null -ne $Profile.fiveHour) { $fiveHour = $Profile.fiveHour.remainingPercent }
     if ($null -ne $Profile.weekly -and $null -ne $Profile.weekly.remainingPercent) {
       $longTerm = [double]$Profile.weekly.remainingPercent
+      $longTermResetsAt = $Profile.weekly.resetsAt
       $source = '每周额度'
     }
     if ((Test-MeaningfulLimit $Profile.individualLimit) -and $null -ne $Profile.individualLimit.remainingPercent) {
       $monthly = [double]$Profile.individualLimit.remainingPercent
       if ($null -eq $longTerm -or $monthly -lt $longTerm) {
         $longTerm = $monthly
+        $longTermResetsAt = $Profile.individualLimit.resetsAt
         $source = '工作空间 / 月度额度'
       }
     }
   }
-  return [pscustomobject]@{ fiveHour = $fiveHour; longTerm = $longTerm; source = $source }
+  return [pscustomobject]@{ fiveHour = $fiveHour; longTerm = $longTerm; source = $source; longTermResetsAt = $longTermResetsAt }
 }
 
 function Get-DisplayProfile {
